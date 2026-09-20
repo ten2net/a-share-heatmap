@@ -1,0 +1,10 @@
+# Cloudflare Tunnel 配置：www.luckybrother.cc → 本 stack 的 web 服务
+# 凭据文件挂载自 ~/.cloudflared/（勿提交到仓库）
+tunnel: a6db290c-b9bb-4190-9451-8b8b98455f44
+credentials-file: /etc/cloudflared/creds.json
+ingress:
+  - hostname: www.luckybrother.cc
+    service: http://web:3000
+  - hostname: api.luckybrother.cc
+    service: http://em-api:8787
+  - service: http_status:404
