@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useId,
   useRef,
@@ -9,12 +10,18 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
-import { Check, Download, Loader2, Plus, Search, Sparkles, Upload, X } from "lucide-react";
+import { Check, CloudDownload, Download, Loader2, Plus, RefreshCw, Search, Sparkles, Upload, X } from "lucide-react";
 
 import { WatchlistAiDialog } from "@/components/watchlist-ai-dialog";
 import { cn } from "@/lib/utils";
 import type { HeatmapMessages, Locale } from "@/lib/i18n";
 import { buildWatchlistExport, type WatchlistExchange, type WatchlistItem } from "@/lib/watchlist";
+import {
+  clearEmGroupIdCache,
+  emGroupName,
+  getEmApiBase,
+  syncFromEmGroup,
+} from "@/lib/em-watchlist-sync";
 import { isWatchlistAiConfigured, loadWatchlistAiConfig } from "@/lib/watchlist-ai";
 import { toast } from "sonner";
 
@@ -92,6 +99,7 @@ export function WatchlistManager({
   onRemove,
   onClear,
   onImportText,
+  onSyncReplace,
 }: {
   messages: HeatmapMessages;
   locale: Locale;
@@ -103,6 +111,8 @@ export function WatchlistManager({
   onRemove: (code: string) => void;
   onClear: () => void;
   onImportText: (raw: string) => void;
+  /** 东财同步完成后以远端为准整体替换本地自选 */
+  onSyncReplace?: (items: WatchlistItem[]) => void;
 }) {
   const listboxId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -149,6 +159,66 @@ export function WatchlistManager({
   const [quotes, setQuotes] = useState<QuoteMap>({});
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
 
+  // 东财同步：固定使用东财分组「自选股」，面板打开时自动静默同步一次
+  const [emSyncing, setEmSyncing] = useState(false);
+  const [emStatus, setEmStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [emLastSyncAt, setEmLastSyncAt] = useState<string | null>(null);
+
+  const emApiBase = getEmApiBase();
+
+  const runEmSync = useCallback(async () => {
+    if (emSyncing) {
+      return;
+    }
+
+    setEmSyncing(true);
+    const result = await syncFromEmGroup(items);
+    setEmSyncing(false);
+    setEmLastSyncAt(result.syncedAt);
+
+    if (result.ok) {
+      const overflow = result.items.length > maxCount;
+      setEmStatus({
+        ok: true,
+        text: overflow
+          ? messages.emSyncSyncedTruncated
+              .replace("{remote}", String(result.items.length))
+              .replace("{max}", String(maxCount))
+          : messages.emSyncStatusOk,
+      });
+      onSyncReplace?.(result.items.slice(0, maxCount));
+      return;
+    }
+
+    if (result.error === "empty") {
+      setEmStatus({ ok: false, text: messages.emSyncEmptyRemote });
+      return;
+    }
+
+    if (result.error === "group-not-found") {
+      // 分组可能被删除/改名，清掉缓存，下次重新解析
+      clearEmGroupIdCache();
+      setEmStatus({
+        ok: false,
+        text: messages.emSyncGroupNotFound.replace("{name}", emGroupName),
+      });
+      return;
+    }
+
+    if (result.error.startsWith("connect:")) {
+      setEmStatus({
+        ok: false,
+        text: messages.emSyncConnectFailed.replace("{base}", emApiBase),
+      });
+      return;
+    }
+
+    setEmStatus({
+      ok: false,
+      text: messages.emSyncStatusFailed.replace("{reason}", result.error),
+    });
+  }, [emSyncing, items, maxCount, messages, onSyncReplace, emApiBase]);
+
   const addedCodes = new Set(items.map((item) => item.code));
   const trimmedQuery = query.trim();
   const showDropdown = dropdownOpen && trimmedQuery.length > 0;
@@ -168,6 +238,22 @@ export function WatchlistManager({
       setConfirmingClear(false);
     }
   }, [items.length]);
+
+  // 面板打开时自动静默同步一次
+  const emInitRef = useRef(false);
+  useEffect(() => {
+    if (!active) {
+      emInitRef.current = false;
+      return;
+    }
+
+    if (emInitRef.current) {
+      return;
+    }
+
+    emInitRef.current = true;
+    void runEmSync();
+  }, [active, runEmSync]);
 
   useEffect(() => {
     if (!trimmedQuery) {
@@ -431,6 +517,52 @@ export function WatchlistManager({
         <Sparkles className="size-3.5" />
         {messages.watchlistAiOpen}
       </button>
+
+      <section className="shrink-0 border border-border bg-muted/10 px-3 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <h4 className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-muted-foreground">
+            <CloudDownload className="size-3.5" />
+            {messages.emSyncTitle}
+          </h4>
+          <button
+            type="button"
+            onClick={() => void runEmSync()}
+            disabled={emSyncing}
+            className="inline-flex h-7 shrink-0 items-center gap-1 border border-border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+          >
+            {emSyncing ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <RefreshCw className="size-3" />
+            )}
+            {messages.emSyncNow}
+          </button>
+        </div>
+
+        <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">{messages.emSyncIntro}</p>
+
+        <p className="mt-2 text-[12px] font-medium text-foreground">
+          {messages.emSyncGroupLabel.replace("{name}", emGroupName)}
+        </p>
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          {emLastSyncAt
+            ? messages.emSyncLastSync.replace(
+                "{time}",
+                new Date(emLastSyncAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US"),
+              )
+            : messages.emSyncNever}
+        </p>
+        {emStatus && (
+          <p
+            className={cn(
+              "mt-1 text-[11px] leading-4",
+              emStatus.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive",
+            )}
+          >
+            {emStatus.text}
+          </p>
+        )}
+      </section>
 
       <section className="flex min-h-0 flex-1 flex-col">
         <div className="mb-1.5 flex shrink-0 items-center justify-between gap-2">

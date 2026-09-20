@@ -14,7 +14,7 @@ export const watchlistUniverseKey = "watchlist" as const;
 
 export type HeatmapUniverse = MarketKey | typeof watchlistUniverseKey;
 
-export const watchlistMaxCount = 80;
+export const watchlistMaxCount = 500;
 
 export const metricKeys = ["1", "2", "3", "4", "5", "6"] as const;
 

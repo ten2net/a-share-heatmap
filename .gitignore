@@ -8,3 +8,5 @@ build
 *.log
 tsconfig.tsbuildinfo
 .DS_Store
+east_money_api/
+ 

@@ -3643,6 +3643,7 @@ function SettingsDrawer({
   onWatchlistRemove,
   onWatchlistClear,
   onWatchlistImportText,
+  onWatchlistSyncReplace,
   areaTipMessage,
 }: {
   open: boolean;
@@ -3680,6 +3681,7 @@ function SettingsDrawer({
   onWatchlistRemove: (code: string) => void;
   onWatchlistClear: () => void;
   onWatchlistImportText: (raw: string) => void;
+  onWatchlistSyncReplace: (items: WatchlistItem[]) => void;
 }) {
   const isMobile = useIsMobile();
   const [recordingAction, setRecordingAction] = useState<ShortcutActionId | null>(null);
@@ -4157,6 +4159,7 @@ function SettingsDrawer({
                 onRemove={onWatchlistRemove}
                 onClear={onWatchlistClear}
                 onImportText={onWatchlistImportText}
+                onSyncReplace={onWatchlistSyncReplace}
               />
             )}
 
@@ -8776,6 +8779,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
         onWatchlistRemove={removeWatchlistItem}
         onWatchlistClear={clearWatchlist}
         onWatchlistImportText={importWatchlistFromText}
+        onWatchlistSyncReplace={(synced) => setWatchlist(synced.slice(0, watchlistMaxCount))}
       />
 
       {sharePreview && (
