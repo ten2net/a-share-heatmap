@@ -8,5 +8,5 @@ build
 *.log
 tsconfig.tsbuildinfo
 .DS_Store
+dist
 east_money_api/
- 
