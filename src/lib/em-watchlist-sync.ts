@@ -12,6 +12,19 @@ export const emGroupName = "自选股";
 const groupIdCacheKey = "emWatchlist:v2:groupId";
 const legacyGroupIdCacheKey = "emWatchlist:groupId";
 const apiBaseKey = "emWatchlist:apiBase";
+const intervalStorageKey = "emWatchlist:intervalSec";
+
+/** 自动同步缺省间隔（秒）与可选档位 */
+export const defaultEmSyncIntervalSec = 180;
+export const emSyncIntervalPresets = [60, 180, 300, 600] as const;
+
+/** 最近一次同步结果（模块级缓存，面板未打开时也能显示状态） */
+let lastSyncResult: EmSyncResult | null = null;
+let inflightSync: Promise<EmSyncResult> | null = null;
+
+export function getLastEmSyncResult(): EmSyncResult | null {
+  return lastSyncResult;
+}
 
 /** Fastify 服务地址：localStorage 覆盖 > NEXT_PUBLIC_EM_API_URL > 缺省值 */
 export const defaultEmApiBase = "http://localhost:8787";
@@ -76,6 +89,21 @@ export async function resolveEmGroupId(): Promise<string | null> {
 /** 清除 groupId 缓存（服务端分组变动后下次重新解析） */
 export function clearEmGroupIdCache() {
   storage()?.removeItem(groupIdCacheKey);
+}
+
+/** 自动同步间隔（秒）：localStorage 可配置，缺省 180s，限制在 30s–3600s */
+export function getEmSyncIntervalSec(): number {
+  const raw = storage()?.getItem(intervalStorageKey);
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed >= 30 && parsed <= 3600) {
+    return parsed;
+  }
+
+  return defaultEmSyncIntervalSec;
+}
+
+export function setEmSyncIntervalSec(seconds: number) {
+  storage()?.setItem(intervalStorageKey, String(seconds));
 }
 
 async function requestEmApi<T>(path: string): Promise<T> {
@@ -274,14 +302,28 @@ export function resolveSyncedWatchlist(local: WatchlistItem[], remote: Watchlist
 /**
  * 执行一次同步：按名称「自选股」解析分组并拉取，以远端为准更新本地。
  * 返回合并后的本地列表；调用方负责写回存储。
+ * 并发安全：上一次同步未结束时直接复用进行中的 Promise；
+ * 结果写入模块级缓存，供面板显示最近一次状态。
  */
-export async function syncFromEmGroup(local: WatchlistItem[]): Promise<EmSyncResult> {
+export function syncFromEmGroup(local: WatchlistItem[]): Promise<EmSyncResult> {
+  if (inflightSync) {
+    return inflightSync;
+  }
+
+  inflightSync = doSyncFromEmGroup(local).finally(() => {
+    inflightSync = null;
+  });
+  return inflightSync;
+}
+
+async function doSyncFromEmGroup(local: WatchlistItem[]): Promise<EmSyncResult> {
   const syncedAt = new Date().toISOString();
 
   try {
     const groupId = await resolveEmGroupId();
     if (!groupId) {
-      return { ok: false, error: "group-not-found", syncedAt };
+      lastSyncResult = { ok: false, error: "group-not-found", syncedAt };
+      return lastSyncResult;
     }
 
     const remote = await fetchEmGroupStocks(groupId);
@@ -289,15 +331,18 @@ export async function syncFromEmGroup(local: WatchlistItem[]): Promise<EmSyncRes
       // 远端返回空列表视为异常（凭据失效/分组被删等），不做清空，防止误删本地；
       // 同时清掉 groupId 缓存，下次重新按名称解析
       clearEmGroupIdCache();
-      return { ok: false, error: "empty", syncedAt };
+      lastSyncResult = { ok: false, error: "empty", syncedAt };
+      return lastSyncResult;
     }
 
-    return { ok: true, items: resolveSyncedWatchlist(local, remote), syncedAt };
+    lastSyncResult = { ok: true, items: resolveSyncedWatchlist(local, remote), syncedAt };
+    return lastSyncResult;
   } catch (error) {
-    return {
+    lastSyncResult = {
       ok: false,
       error: error instanceof Error ? error.message : String(error),
       syncedAt,
     };
+    return lastSyncResult;
   }
 }

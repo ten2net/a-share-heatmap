@@ -68,6 +68,7 @@ export const messages = {
       emSyncLastSync: "Last synced {time}",
       emSyncNever: "Not synced yet",
       emSyncNow: "Sync now",
+      emSyncAutoLabel: "Auto sync every {min} min",
       watchlistAiTitle: "AI screenshot recognition",
       watchlistAiOpen: "Add from screenshot",
       watchlistAiIntro:
@@ -412,6 +413,7 @@ export const messages = {
       emSyncLastSync: "上次同步：{time}",
       emSyncNever: "尚未同步",
       emSyncNow: "立即同步",
+      emSyncAutoLabel: "每 {min} 分钟自动同步",
       watchlistAiTitle: "AI 截图识股",
       watchlistAiOpen: "从截图添加",
       watchlistAiIntro:

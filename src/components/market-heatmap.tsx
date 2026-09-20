@@ -113,6 +113,12 @@ import {
   watchlistStorageKey,
   type WatchlistItem,
 } from "@/lib/watchlist";
+import {
+  defaultEmSyncIntervalSec,
+  getEmSyncIntervalSec,
+  setEmSyncIntervalSec,
+  syncFromEmGroup,
+} from "@/lib/em-watchlist-sync";
 import { useHeatmapWebMcp } from "@/hooks/use-heatmap-webmcp";
 
 type QuoteMap = Record<string, { price: number; changePct: number; turnoverAmount: number }>;
@@ -3659,6 +3665,8 @@ function SettingsDrawer({
   onWatchlistClear,
   onWatchlistImportText,
   onWatchlistSyncReplace,
+  emSyncIntervalSec,
+  onEmSyncIntervalChange,
   areaTipMessage,
 }: {
   open: boolean;
@@ -3697,6 +3705,8 @@ function SettingsDrawer({
   onWatchlistClear: () => void;
   onWatchlistImportText: (raw: string) => void;
   onWatchlistSyncReplace: (items: WatchlistItem[]) => void;
+  emSyncIntervalSec: number;
+  onEmSyncIntervalChange: (seconds: number) => void;
 }) {
   const isMobile = useIsMobile();
   const [recordingAction, setRecordingAction] = useState<ShortcutActionId | null>(null);
@@ -4175,6 +4185,8 @@ function SettingsDrawer({
                 onClear={onWatchlistClear}
                 onImportText={onWatchlistImportText}
                 onSyncReplace={onWatchlistSyncReplace}
+                syncIntervalSec={emSyncIntervalSec}
+                onSyncIntervalChange={onEmSyncIntervalChange}
               />
             )}
 
@@ -4488,6 +4500,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
   const [market, setMarket] = useState<HeatmapUniverse>("all");
   const [period, setPeriod] = useState<HeatmapPeriodKey>("day");
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const [emSyncIntervalSec, setEmSyncIntervalSecState] = useState(defaultEmSyncIntervalSec);
   const [boardFilter, setBoardFilter] = useState<string[]>([]);
   const [trendFilter, setTrendFilter] = useState(allTrendsValue);
   const [changeRangeFilter, setChangeRangeFilter] = useState<ChangeRangeFilter>(emptyChangeRangeFilter);
@@ -4699,6 +4712,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
       } else if (storedSizeMode === "marketCap" || storedSizeMode === "amount" || storedSizeMode === "turnoverRate") {
         setSizeMode(storedSizeMode);
       }
+      setEmSyncIntervalSecState(getEmSyncIntervalSec());
       if (storedThumbnailMode === "on" || storedThumbnailMode === "off") {
         setThumbnailMode(storedThumbnailMode === "on");
       }
@@ -5565,6 +5579,43 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
     setWatchlist([]);
     toast.success(messages.watchlistClearSuccess, { id: "heatmap-watchlist" });
   }, [messages.watchlistClearSuccess]);
+
+  // 东财定时同步：以最新 watchlist 为基线，成功后以远端为准替换；失败静默（状态缓存在 sync 模块内）
+  const watchlistRef = useRef<WatchlistItem[]>([]);
+  useEffect(() => {
+    watchlistRef.current = watchlist;
+  }, [watchlist]);
+
+  const runEmWatchlistSync = useCallback(async () => {
+    const result = await syncFromEmGroup(watchlistRef.current);
+    if (result.ok) {
+      setWatchlist(result.items.slice(0, watchlistMaxCount));
+    }
+  }, []);
+
+  const handleEmSyncIntervalChange = useCallback((seconds: number) => {
+    setEmSyncIntervalSecState(seconds);
+    try {
+      setEmSyncIntervalSec(seconds);
+    } catch {
+      /* Preferences are optional. */
+    }
+  }, []);
+
+  usePollWhileVisible(
+    useCallback(async () => {
+      if (!preferencesReady) {
+        return;
+      }
+
+      try {
+        await runEmWatchlistSync();
+      } catch {
+        // 定时同步失败静默，不打扰用户
+      }
+    }, [preferencesReady, runEmWatchlistSync]),
+    emSyncIntervalSec * 1000
+  );
 
   const toggleWatchlistItem = useCallback(
     (stock: {
@@ -8805,6 +8856,8 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
         onWatchlistClear={clearWatchlist}
         onWatchlistImportText={importWatchlistFromText}
         onWatchlistSyncReplace={(synced) => setWatchlist(synced.slice(0, watchlistMaxCount))}
+        emSyncIntervalSec={emSyncIntervalSec}
+        onEmSyncIntervalChange={handleEmSyncIntervalChange}
       />
 
       {sharePreview && (

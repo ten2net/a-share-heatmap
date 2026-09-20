@@ -19,8 +19,11 @@ import { buildWatchlistExport, type WatchlistExchange, type WatchlistItem } from
 import {
   clearEmGroupIdCache,
   emGroupName,
+  emSyncIntervalPresets,
   getEmApiBase,
+  getLastEmSyncResult,
   syncFromEmGroup,
+  type EmSyncResult,
 } from "@/lib/em-watchlist-sync";
 import { isWatchlistAiConfigured, loadWatchlistAiConfig } from "@/lib/watchlist-ai";
 import { toast } from "sonner";
@@ -100,6 +103,8 @@ export function WatchlistManager({
   onClear,
   onImportText,
   onSyncReplace,
+  syncIntervalSec,
+  onSyncIntervalChange,
 }: {
   messages: HeatmapMessages;
   locale: Locale;
@@ -113,6 +118,9 @@ export function WatchlistManager({
   onImportText: (raw: string) => void;
   /** 东财同步完成后以远端为准整体替换本地自选 */
   onSyncReplace?: (items: WatchlistItem[]) => void;
+  /** 东财自动同步间隔（秒）与变更回调 */
+  syncIntervalSec: number;
+  onSyncIntervalChange: (seconds: number) => void;
 }) {
   const listboxId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -166,6 +174,38 @@ export function WatchlistManager({
 
   const emApiBase = getEmApiBase();
 
+  // 把同步结果映射为面板状态文案（面板自身同步与主组件定时同步共用缓存结果）
+  const buildEmStatus = useCallback(
+    (result: EmSyncResult): { ok: boolean; text: string } => {
+      if (result.ok) {
+        const overflow = result.items.length > maxCount;
+        return {
+          ok: true,
+          text: overflow
+            ? messages.emSyncSyncedTruncated
+                .replace("{remote}", String(result.items.length))
+                .replace("{max}", String(maxCount))
+            : messages.emSyncStatusOk,
+        };
+      }
+
+      if (result.error === "empty") {
+        return { ok: false, text: messages.emSyncEmptyRemote };
+      }
+
+      if (result.error === "group-not-found") {
+        return { ok: false, text: messages.emSyncGroupNotFound.replace("{name}", emGroupName) };
+      }
+
+      if (result.error.startsWith("connect:")) {
+        return { ok: false, text: messages.emSyncConnectFailed.replace("{base}", emApiBase) };
+      }
+
+      return { ok: false, text: messages.emSyncStatusFailed.replace("{reason}", result.error) };
+    },
+    [emApiBase, maxCount, messages],
+  );
+
   const runEmSync = useCallback(async () => {
     if (emSyncing) {
       return;
@@ -175,49 +215,18 @@ export function WatchlistManager({
     const result = await syncFromEmGroup(items);
     setEmSyncing(false);
     setEmLastSyncAt(result.syncedAt);
+    setEmStatus(buildEmStatus(result));
 
     if (result.ok) {
-      const overflow = result.items.length > maxCount;
-      setEmStatus({
-        ok: true,
-        text: overflow
-          ? messages.emSyncSyncedTruncated
-              .replace("{remote}", String(result.items.length))
-              .replace("{max}", String(maxCount))
-          : messages.emSyncStatusOk,
-      });
       onSyncReplace?.(result.items.slice(0, maxCount));
-      return;
-    }
-
-    if (result.error === "empty") {
-      setEmStatus({ ok: false, text: messages.emSyncEmptyRemote });
       return;
     }
 
     if (result.error === "group-not-found") {
       // 分组可能被删除/改名，清掉缓存，下次重新解析
       clearEmGroupIdCache();
-      setEmStatus({
-        ok: false,
-        text: messages.emSyncGroupNotFound.replace("{name}", emGroupName),
-      });
-      return;
     }
-
-    if (result.error.startsWith("connect:")) {
-      setEmStatus({
-        ok: false,
-        text: messages.emSyncConnectFailed.replace("{base}", emApiBase),
-      });
-      return;
-    }
-
-    setEmStatus({
-      ok: false,
-      text: messages.emSyncStatusFailed.replace("{reason}", result.error),
-    });
-  }, [emSyncing, items, maxCount, messages, onSyncReplace, emApiBase]);
+  }, [emSyncing, items, maxCount, onSyncReplace, buildEmStatus]);
 
   const addedCodes = new Set(items.map((item) => item.code));
   const trimmedQuery = query.trim();
@@ -252,8 +261,16 @@ export function WatchlistManager({
     }
 
     emInitRef.current = true;
+
+    // 先展示最近一次同步结果（可能来自主组件的定时同步），再静默同步一次
+    const cached = getLastEmSyncResult();
+    if (cached) {
+      setEmLastSyncAt(cached.syncedAt);
+      setEmStatus(buildEmStatus(cached));
+    }
+
     void runEmSync();
-  }, [active, runEmSync]);
+  }, [active, runEmSync, buildEmStatus]);
 
   useEffect(() => {
     if (!trimmedQuery) {
@@ -562,6 +579,30 @@ export function WatchlistManager({
             {emStatus.text}
           </p>
         )}
+
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <p className="text-[11px] text-muted-foreground">
+            {messages.emSyncAutoLabel.replace("{min}", String(Math.round(syncIntervalSec / 60)))}
+          </p>
+          <div className="flex items-center gap-1">
+            {emSyncIntervalPresets.map((presetSec) => (
+              <button
+                key={presetSec}
+                type="button"
+                onClick={() => onSyncIntervalChange(presetSec)}
+                aria-pressed={syncIntervalSec === presetSec}
+                className={cn(
+                  "h-6 border px-1.5 text-[11px] font-medium transition-colors",
+                  syncIntervalSec === presetSec
+                    ? "border-brand/55 bg-brand/12 text-foreground"
+                    : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                {presetSec / 60}
+              </button>
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className="flex min-h-0 flex-1 flex-col">
