@@ -1,0 +1,2 @@
+# 独立包：不并入上级 a-share-heatmap 的 pnpm workspace
+packages: []

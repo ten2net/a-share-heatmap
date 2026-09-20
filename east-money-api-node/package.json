@@ -1,0 +1,22 @@
+{
+  "name": "east-money-api-node",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "东方财富自选股 + 行情 REST API 服务（Python east_money_api 的 TypeScript 移植）",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsc && node dist/server.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.3.0",
+    "fastify": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  },
+  "packageManager": "pnpm@10.15.0"
+}
