@@ -33,3 +33,29 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # Cloudflare Tunnel：将 www.luckybrother.cc 穿透到本 stack 的 web 服务
+  # 凭据 JSON 在宿主机 ~/.cloudflared/（由 `cloudflared tunnel create` 生成），勿提交仓库
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.1
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - /root/.cloudflared/a6db290c-b9bb-4190-9451-8b8b98455f44.json:/etc/cloudflared/creds.json:ro
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # 局域网统一入口：http://<服务器IP>:8088
+  # / → web，/em-api/* → em-api（前端把 NEXT_PUBLIC_EM_API_URL 设为 /em-api 即可走通同步）
+  nginx:
+    image: nginx:1.29-alpine
+    ports:
+      - "8088:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - web
+      - em-api
+    restart: unless-stopped
