@@ -172,7 +172,7 @@ export function createHeatmapViewWebMcpTools(context: HeatmapWebMcpContext): Web
       properties: {
         market: { type: "string", enum: [...marketKeys, "watchlist"] },
         period: { type: "string", enum: heatmapPeriodKeys },
-        sizeMode: { type: "string", enum: ["marketCap", "turnover"] },
+        sizeMode: { type: "string", enum: ["marketCap", "amount", "turnoverRate"] },
         thumbnailMode: { type: "boolean" },
       },
       additionalProperties: false,
@@ -194,7 +194,7 @@ export function createHeatmapViewWebMcpTools(context: HeatmapWebMcpContext): Web
       }
       const sizeMode = input.sizeMode;
       if (sizeMode !== undefined) {
-        if (sizeMode !== "marketCap" && sizeMode !== "turnover") throw new Error(`Unknown sizeMode "${String(sizeMode)}".`);
+        if (sizeMode !== "marketCap" && sizeMode !== "amount" && sizeMode !== "turnoverRate") throw new Error(`Unknown sizeMode "${String(sizeMode)}".`);
         context.actionsRef.current.setSizeMode(sizeMode as HeatmapSizeMode);
         changes.sizeMode = sizeMode;
       }

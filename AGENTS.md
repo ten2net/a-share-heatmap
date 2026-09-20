@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-**a-share-heatmap** 是一个开源的 A 股大盘云图（市场热力图）站点：把整个 A 股市场绘制成一张可交互的 Canvas 矩形树图，色块大小代表个股流通市值权重，红绿颜色代表当日（或近 5 日 / 近 20 日 / 今年以来）涨跌幅。
+**a-share-heatmap** 是一个开源的 A 股大盘云图（市场热力图）站点：把整个 A 股市场绘制成一张可交互的 Canvas 矩形树图，色块大小代表可配置的面积指标（流通市值 / 成交额 / 换手率，默认成交额），红绿颜色代表当日（或近 5 日 / 近 20 日 / 今年以来）涨跌幅。
 
 - 技术栈：Next.js 16（App Router）+ React 19 + TypeScript + Tailwind CSS 4 + Canvas 2D，部署在 Vercel Serverless Functions。
 - 数据来源：东方财富公开行情快照接口（服务端秒级缓存）；远端不可用时自动回退到仓库内置快照（`src/lib/data/*.json`）。

@@ -9,7 +9,7 @@ import type { WatchlistItem } from "@/lib/watchlist";
 import type { HeatTheme } from "@/lib/heatmap-themes";
 
 export type HeatmapTrendFilter = "all" | "rising" | "falling";
-export type HeatmapSizeMode = "marketCap" | "turnover";
+export type HeatmapSizeMode = "marketCap" | "amount" | "turnoverRate";
 
 export type HeatmapChangeRange = {
   min: number | null;

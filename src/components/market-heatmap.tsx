@@ -249,7 +249,7 @@ type ThemeColorKey = "green" | "red" | "blue" | "violet";
 type DisplayMode = "dark" | "light";
 type FilterOpenMode = "click" | "hover";
 type SettingsTab = "appearance" | "watchlist" | "shortcuts" | "help" | "webmcp" | "project";
-type HeatmapSizeMode = "marketCap" | "turnover";
+type HeatmapSizeMode = "marketCap" | "amount" | "turnoverRate";
 
 const marketOptions: MarketKey[] = [...marketKeys];
 const periodOptions: HeatmapPeriodKey[] = [...heatmapPeriodKeys];
@@ -762,12 +762,19 @@ function normalizeSizeValue(value: number) {
 }
 
 function getStockSizeValue(
-  stock: { code: string; value: number; turnoverAmount: number },
+  stock: { code: string; value: number; turnoverAmount: number; turnoverRate: number },
   quotes: QuoteMap,
   sizeMode: HeatmapSizeMode
 ) {
-  if (sizeMode === "turnover") {
+  if (sizeMode === "amount") {
     return normalizeSizeValue(getLiveTurnoverAmount(stock.code, stock.turnoverAmount, quotes));
+  }
+
+  if (sizeMode === "turnoverRate") {
+    // 换手率缺失（内置兜底快照无 f8）时回退流通市值权重，避免出现零面积块
+    return Number.isFinite(stock.turnoverRate) && stock.turnoverRate > 0
+      ? stock.turnoverRate
+      : stock.value;
   }
 
   return stock.value;
@@ -3541,7 +3548,7 @@ function FilterPanel({
         <div className={layout === "sheet" ? "grid grid-cols-2 gap-3" : "space-y-3.5"}>
           <section>
             <h3 className="mb-1.5 text-[11px] font-semibold text-muted-foreground">{messages.sizeModeLabel}</h3>
-            <div className="grid grid-cols-2 gap-1">
+            <div className="grid grid-cols-3 gap-1">
               <button
                 type="button"
                 onClick={() => onSizeModeChange("marketCap")}
@@ -3552,9 +3559,17 @@ function FilterPanel({
               </button>
               <button
                 type="button"
-                onClick={() => onSizeModeChange("turnover")}
-                aria-pressed={sizeMode === "turnover"}
-                className={filterChipClass(sizeMode === "turnover")}
+                onClick={() => onSizeModeChange("amount")}
+                aria-pressed={sizeMode === "amount"}
+                className={filterChipClass(sizeMode === "amount")}
+              >
+                {messages.sizeModeAmount}
+              </button>
+              <button
+                type="button"
+                onClick={() => onSizeModeChange("turnoverRate")}
+                aria-pressed={sizeMode === "turnoverRate"}
+                className={filterChipClass(sizeMode === "turnoverRate")}
               >
                 {messages.sizeModeTurnover}
               </button>
@@ -4478,7 +4493,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
   const [changeRangeFilter, setChangeRangeFilter] = useState<ChangeRangeFilter>(emptyChangeRangeFilter);
   const [changeRangeMinInput, setChangeRangeMinInput] = useState("");
   const [changeRangeMaxInput, setChangeRangeMaxInput] = useState("");
-  const [sizeMode, setSizeMode] = useState<HeatmapSizeMode>("marketCap");
+  const [sizeMode, setSizeMode] = useState<HeatmapSizeMode>("amount");
   const [thumbnailMode, setThumbnailMode] = useState(false);
   const [headerTrendStats, setHeaderTrendStats] = useState(true);
   const [heatmapBordersPreference, setHeatmapBordersPreference] = useState(true);
@@ -4678,7 +4693,10 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
       if (storedFilterOpenMode === "click" || storedFilterOpenMode === "hover") {
         setFilterOpenMode(storedFilterOpenMode);
       }
-      if (storedSizeMode === "marketCap" || storedSizeMode === "turnover") {
+      if (storedSizeMode === "turnover") {
+        // 旧版本 "turnover" 实际表示成交额，迁移为 "amount"；新版本换手率为 "turnoverRate"
+        setSizeMode("amount");
+      } else if (storedSizeMode === "marketCap" || storedSizeMode === "amount" || storedSizeMode === "turnoverRate") {
         setSizeMode(storedSizeMode);
       }
       if (storedThumbnailMode === "on" || storedThumbnailMode === "off") {
@@ -4942,10 +4960,17 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
     }
   }, [customHeatThemes, heatThemeId, preferencesReady]);
 
-  const areaTipMessage = useMemo(
-    () => (sizeMode === "turnover" ? messages.tipAreaTurnover : messages.tipAreaMarketCap),
-    [messages.tipAreaMarketCap, messages.tipAreaTurnover, sizeMode]
-  );
+  const areaTipMessage = useMemo(() => {
+    if (sizeMode === "amount") {
+      return messages.tipAreaAmount;
+    }
+
+    if (sizeMode === "turnoverRate") {
+      return messages.tipAreaTurnoverRate;
+    }
+
+    return messages.tipAreaMarketCap;
+  }, [messages.tipAreaAmount, messages.tipAreaMarketCap, messages.tipAreaTurnoverRate, sizeMode]);
   const refreshSize = useCallback(() => {
     const target = viewportRef.current;
     if (!target) {

@@ -98,6 +98,7 @@ type StockSnapshot = {
   totalMarketCap: number;
   floatMarketCap: number;
   turnoverAmount?: number;
+  turnoverRate?: number;
 };
 
 export type HeatmapStockNode = {
@@ -110,6 +111,7 @@ export type HeatmapStockNode = {
   price: number;
   changePct: number;
   turnoverAmount: number;
+  turnoverRate: number;
 };
 
 export type HeatmapBoardNode = {
@@ -260,6 +262,7 @@ const eastmoneyQuoteFields = [
   "f2", // latest price
   "f3", // day change
   "f6", // turnover amount
+  "f8", // turnover rate (%)
   "f12",
   "f13",
   "f14",
@@ -749,6 +752,7 @@ function parseEastmoneyStockRow(row: Record<string, number | string | undefined>
     totalMarketCap: toFiniteNumber(row.f20) ?? previous?.totalMarketCap ?? 0,
     floatMarketCap: toFiniteNumber(row.f21) ?? previous?.floatMarketCap ?? 0,
     turnoverAmount: toFiniteNumber(row.f6) ?? previous?.turnoverAmount ?? 0,
+    turnoverRate: toFiniteNumber(row.f8) ?? previous?.turnoverRate ?? 0,
   };
 }
 
@@ -1682,6 +1686,7 @@ function buildNodesFromStocks(
       price: quote?.price ?? stock.price,
       changePct: getChangeForPeriod(quote?.changes, period, stock.changePct),
       turnoverAmount: quote?.turnoverAmount ?? getStockTurnoverAmount(stock),
+      turnoverRate: stock.turnoverRate ?? 0,
     });
 
     boardMap.set(stock.boardName, current);
