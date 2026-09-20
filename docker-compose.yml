@@ -1,0 +1,35 @@
+services:
+  web:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_EM_API_URL: ${NEXT_PUBLIC_EM_API_URL:-http://localhost:8787}
+    ports:
+      - "3000:3000"
+    depends_on:
+      em-api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/heatmap/overview"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  em-api:
+    build: ./east-money-api-node
+    ports:
+      - "8787:8787"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: 8787
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

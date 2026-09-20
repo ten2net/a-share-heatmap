@@ -145,6 +145,26 @@ EASTMONEY_COOKIE="<浏览器复制的 Cookie 整串>" pnpm build && node dist/se
 
 服务默认监听 `http://localhost:8787`。打开自选股面板时会自动拉取并同步；同步服务不在本机时，用 `NEXT_PUBLIC_EM_API_URL` 或浏览器 localStorage 键 `emWatchlist:apiBase` 指定地址。
 
+## Docker 部署
+
+仓库根目录提供 `docker-compose.yml`，包含两个服务：
+
+- `web`：主站（Next.js standalone），映射 `3000` 端口；
+- `em-api`：东方财富自选股同步服务（`east-money-api-node/`），映射 `8787` 端口。
+
+```bash
+docker compose up --build -d   # 构建并启动
+docker compose down            # 停止并清理
+```
+
+凭据通过根目录 `.env` 注入到 `em-api`（不存在也可启动，除自选股分组外的接口不受影响；该文件已被 .gitignore 与 .dockerignore 忽略，不会进入镜像或仓库）。前端访问 API 的地址在构建期注入，可用环境变量覆盖，默认指向 `http://localhost:8787`：
+
+```bash
+NEXT_PUBLIC_EM_API_URL=http://localhost:8787 docker compose up --build -d
+```
+
+也可以单独构建镜像：`docker build -t a-share-heatmap .` 和 `docker build -t em-api east-money-api-node/`。
+
 ## 常用命令
 
 ```bash

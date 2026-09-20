@@ -1,0 +1,15 @@
+node_modules
+.next
+out
+dist
+build
+.vercel
+.git
+.github
+.env
+.env.*
+*.log
+Dockerfile
+docker-compose.yml
+docs
+east-money-api-node
