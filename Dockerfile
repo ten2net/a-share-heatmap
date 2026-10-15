@@ -23,6 +23,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+# 显式限制 V8 堆，避免全市场行情拉取时堆增长到默认上限后进程崩溃
+ENV NODE_OPTIONS="--max-old-space-size=1536"
 RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static

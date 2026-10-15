@@ -10,12 +10,16 @@ services:
       em-api:
         condition: service_healthy
     restart: unless-stopped
+    # 限制容器内存并显式设置 V8 堆上限，避免全市场行情拉取时堆无限增长到默认上限后崩溃
+    mem_limit: 2g
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=1536"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/heatmap/overview"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 40s
 
   em-api:
     build: ./east-money-api-node
@@ -26,6 +30,8 @@ services:
         required: false
     environment:
       PORT: 8787
+      NODE_OPTIONS: "--max-old-space-size=768"
+    mem_limit: 1g
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/healthz"]

@@ -251,6 +251,7 @@ const summaryRequestHeaders = {
 const quoteCacheMs = 8_000;
 const summaryCacheMs = 8_000;
 const sinaBatchSize = 220;
+const sinaConcurrency = 4;
 const eastmoneyClistPageSize = 100;
 const eastmoneyClistConcurrency = 4;
 const eastmoneyClistMaxAttempts = 4;
@@ -823,6 +824,17 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Cancel a request when either the caller-supplied signal or the per-attempt
+// timeout fires, so an outer deadline can abort retries that are still in flight.
+function combineAbortSignals(...signals: (AbortSignal | undefined)[]) {
+  const active = signals.filter((signal): signal is AbortSignal => Boolean(signal));
+  if (active.length === 1) {
+    return active[0];
+  }
+
+  return AbortSignal.any(active);
+}
+
 async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -848,10 +860,18 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-async function fetchEastmoneyClistPage(fs: string, page: number, pageSize = eastmoneyClistPageSize) {
+async function fetchEastmoneyClistPage(
+  fs: string,
+  page: number,
+  pageSize = eastmoneyClistPageSize,
+  signal?: AbortSignal
+) {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= eastmoneyClistMaxAttempts; attempt += 1) {
+    if (signal?.aborted) {
+      throw new Error("Eastmoney clist request aborted");
+    }
     // Prefer push2delay on first attempt; only rotate to other mirrors on retry.
     const host = eastmoneyClistHosts[(attempt - 1) % eastmoneyClistHosts.length];
     const params = new URLSearchParams({
@@ -872,7 +892,7 @@ async function fetchEastmoneyClistPage(fs: string, page: number, pageSize = east
         headers: eastmoneyRequestHeaders,
         next: { revalidate: 0 },
         cache: "no-store",
-        signal: AbortSignal.timeout(10_000),
+        signal: combineAbortSignals(signal, AbortSignal.timeout(10_000)),
       });
 
       if (!response.ok) {
@@ -894,10 +914,13 @@ async function fetchEastmoneyClistPage(fs: string, page: number, pageSize = east
   throw lastError instanceof Error ? lastError : new Error("Eastmoney clist request failed");
 }
 
-async function fetchEastmoneyUlistBatch(secids: string[]) {
+async function fetchEastmoneyUlistBatch(secids: string[], signal?: AbortSignal) {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= eastmoneyUlistMaxAttempts; attempt += 1) {
+    if (signal?.aborted) {
+      throw new Error("Eastmoney ulist request aborted");
+    }
     const host = eastmoneyClistHosts[(attempt - 1) % eastmoneyClistHosts.length];
     const params = new URLSearchParams({
       secids: secids.join(","),
@@ -912,7 +935,7 @@ async function fetchEastmoneyUlistBatch(secids: string[]) {
         headers: eastmoneyRequestHeaders,
         next: { revalidate: 0 },
         cache: "no-store",
-        signal: AbortSignal.timeout(10_000),
+        signal: combineAbortSignals(signal, AbortSignal.timeout(10_000)),
       });
 
       if (!response.ok) {
@@ -934,8 +957,12 @@ async function fetchEastmoneyUlistBatch(secids: string[]) {
   throw lastError instanceof Error ? lastError : new Error("Eastmoney ulist request failed");
 }
 
-async function fetchEastmoneyClistPages(fs: string, onPayload?: (payload: unknown) => void) {
-  const firstPayload = await fetchEastmoneyClistPage(fs, 1);
+async function fetchEastmoneyClistPages(
+  fs: string,
+  onPayload?: (payload: unknown) => void,
+  signal?: AbortSignal
+) {
+  const firstPayload = await fetchEastmoneyClistPage(fs, 1, eastmoneyClistPageSize, signal);
   onPayload?.(firstPayload);
   const total = toFiniteNumber((firstPayload as { data?: { total?: number | string } }).data?.total) ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / eastmoneyClistPageSize));
@@ -946,7 +973,7 @@ async function fetchEastmoneyClistPages(fs: string, onPayload?: (payload: unknow
     }
 
     try {
-      const payload = await fetchEastmoneyClistPage(fs, page);
+      const payload = await fetchEastmoneyClistPage(fs, page, eastmoneyClistPageSize, signal);
       onPayload?.(payload);
       return payload;
     } catch {
@@ -1149,11 +1176,15 @@ async function fetchMarketIndexSnapshotFromRemote(): Promise<MarketIndexSnapshot
   }
 }
 
-async function fetchEastmoneyQuoteSnapshotFromClist(): Promise<QuoteSnapshot> {
-  const { payloads, total } = await fetchEastmoneyClistPages(eastmoneyAsharesFs, (payload) => {
-    const result = parseEastmoneyQuoteBatch(payload);
-    publishQuoteProgress({ updatedAt: result.updatedAt, quotes: result.quotes });
-  });
+async function fetchEastmoneyQuoteSnapshotFromClist(signal?: AbortSignal): Promise<QuoteSnapshot> {
+  const { payloads, total } = await fetchEastmoneyClistPages(
+    eastmoneyAsharesFs,
+    (payload) => {
+      const result = parseEastmoneyQuoteBatch(payload);
+      publishQuoteProgress({ updatedAt: result.updatedAt, quotes: result.quotes });
+    },
+    signal
+  );
   const quotes: Record<string, RemoteQuoteValue> = {};
   const stocksByCode = new Map<string, StockSnapshot>();
   let updatedAt = "";
@@ -1183,7 +1214,7 @@ async function fetchEastmoneyQuoteSnapshotFromClist(): Promise<QuoteSnapshot> {
   };
 }
 
-async function fetchEastmoneyQuoteSnapshotFromUlist(): Promise<QuoteSnapshot> {
+async function fetchEastmoneyQuoteSnapshotFromUlist(signal?: AbortSignal): Promise<QuoteSnapshot> {
   const secids = baselineStocks.map((stock) => toEastmoneySecid(stock.code));
   const batches: string[][] = [];
 
@@ -1193,7 +1224,7 @@ async function fetchEastmoneyQuoteSnapshotFromUlist(): Promise<QuoteSnapshot> {
 
   const payloads = await mapWithConcurrency(batches, eastmoneyUlistConcurrency, async (batch) => {
     try {
-      const payload = await fetchEastmoneyUlistBatch(batch);
+      const payload = await fetchEastmoneyUlistBatch(batch, signal);
       const result = parseEastmoneyQuoteBatch(payload);
       publishQuoteProgress({ updatedAt: result.updatedAt, quotes: result.quotes });
       return payload;
@@ -1239,12 +1270,12 @@ async function fetchEastmoneyQuoteSnapshotFromUlist(): Promise<QuoteSnapshot> {
   };
 }
 
-async function fetchEastmoneyQuoteSnapshotFromRemote(): Promise<QuoteSnapshot> {
+async function fetchEastmoneyQuoteSnapshotFromRemote(signal?: AbortSignal): Promise<QuoteSnapshot> {
   try {
-    return await fetchEastmoneyQuoteSnapshotFromClist();
+    return await fetchEastmoneyQuoteSnapshotFromClist(signal);
   } catch {
     // Same period fields as clist; used when list pagination is unavailable.
-    return fetchEastmoneyQuoteSnapshotFromUlist();
+    return fetchEastmoneyQuoteSnapshotFromUlist(signal);
   }
 }
 
@@ -1256,13 +1287,12 @@ async function fetchSinaQuoteSnapshotFromRemote(): Promise<QuoteSnapshot> {
     batches.push(symbols.slice(index, index + sinaBatchSize));
   }
 
-  const results = await Promise.all(
-    batches.map(async (batch) => {
-      const result = await fetchSinaQuoteBatch(batch);
-      publishQuoteProgress({ updatedAt: result.updatedAt, quotes: result.quotes });
-      return result;
-    })
-  );
+  // Bound concurrency so a full-market fetch does not hold all batches in memory at once.
+  const results = await mapWithConcurrency(batches, sinaConcurrency, async (batch) => {
+    const result = await fetchSinaQuoteBatch(batch);
+    publishQuoteProgress({ updatedAt: result.updatedAt, quotes: result.quotes });
+    return result;
+  });
   const quotes: Record<string, RemoteQuoteValue> = {};
   let updatedAt = "";
 
@@ -1388,18 +1418,16 @@ async function fetchQuoteSnapshotFromRemote(): Promise<QuoteSnapshot> {
     }));
 
   // Eastmoney can be slow or flaky from some runtimes; bound the wait so Sina can still serve day data.
-  const eastmoneyPromise = Promise.race([
-    fetchEastmoneyQuoteSnapshotFromRemote()
-      .then((snapshot) => ({ snapshot, error: null as Error | null }))
-      .catch((error: unknown) => ({
-        snapshot: null as QuoteSnapshot | null,
-        error: error instanceof Error ? error : new Error("Eastmoney quote snapshot failed"),
-      })),
-    sleep(25_000).then(() => ({
+  // Abort the underlying requests on timeout so they stop consuming sockets and memory.
+  const eastmoneyAbort = new AbortController();
+  const eastmoneyTimeout = setTimeout(() => eastmoneyAbort.abort(), 25_000);
+  const eastmoneyPromise = fetchEastmoneyQuoteSnapshotFromRemote(eastmoneyAbort.signal)
+    .then((snapshot) => ({ snapshot, error: null as Error | null }))
+    .catch((error: unknown) => ({
       snapshot: null as QuoteSnapshot | null,
-      error: new Error("Eastmoney quote snapshot timed out"),
-    })),
-  ]);
+      error: error instanceof Error ? error : new Error("Eastmoney quote snapshot failed"),
+    }))
+    .finally(() => clearTimeout(eastmoneyTimeout));
 
   const [eastmoneyResult, sinaResult] = await Promise.all([eastmoneyPromise, sinaPromise]);
   const eastmoneySnapshot = eastmoneyResult.snapshot;
