@@ -106,12 +106,15 @@ export function setEmSyncIntervalSec(seconds: number) {
   storage()?.setItem(intervalStorageKey, String(seconds));
 }
 
+/** 单次同步请求超时：避免请求挂起导致 emSyncing 恒为 true，后续点击被静默忽略 */
+const emRequestTimeoutMs = 20_000;
+
 async function requestEmApi<T>(path: string): Promise<T> {
   const base = getEmApiBase();
   const url = `${base}${path}`;
   let response: Response;
   try {
-    response = await fetch(url);
+    response = await fetch(url, { signal: AbortSignal.timeout(emRequestTimeoutMs) });
   } catch {
     throw new Error(`connect:${base}`);
   }
@@ -238,6 +241,7 @@ async function backfillStockInfo(items: WatchlistItem[]): Promise<WatchlistItem[
         try {
           const response = await fetch(
             `/api/heatmap/search?q=${encodeURIComponent(symbol)}&limit=4`,
+            { signal: AbortSignal.timeout(10_000) },
           );
           if (!response.ok) {
             return;
