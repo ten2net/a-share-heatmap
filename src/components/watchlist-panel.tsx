@@ -178,12 +178,14 @@ export function WatchlistManager({
   const buildEmStatus = useCallback(
     (result: EmSyncResult): { ok: boolean; text: string } => {
       if (result.ok) {
-        const overflow = result.items.length > maxCount;
+        // 用远端实际数量判断截断：合并去重后 items.length 可能小于远端数量，
+        // 拿它判断会漏报「远端超上限但提示不显示」的情况。
+        const overflow = result.remoteCount > maxCount;
         return {
           ok: true,
           text: overflow
             ? messages.emSyncSyncedTruncated
-                .replace("{remote}", String(result.items.length))
+                .replace("{remote}", String(result.remoteCount))
                 .replace("{max}", String(maxCount))
             : messages.emSyncStatusOk,
         };

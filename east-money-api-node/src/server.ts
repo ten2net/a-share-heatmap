@@ -29,6 +29,59 @@ function errorReply(reply: FastifyReply, err: unknown) {
   return reply.code(500).send({ error: message });
 }
 
+/**
+ * 带 TTL 的读取缓存：东财首拉常有 10-20s 延迟，前端每次同步都冷拉会长时间无响应。
+ * 同时做 in-flight 去重，避免并发请求各自穿透到东财。
+ * invalidate() 清空全部条目，供写操作后立即失效使用。
+ */
+function createTtlCache<T>(ttlMs: number) {
+  const entries = new Map<string, { value: T; expiresAt: number }>();
+  const inflight = new Map<string, Promise<T>>();
+
+  const run = async (key: string, load: () => Promise<T>): Promise<T> => {
+    const cached = entries.get(key);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.value;
+    }
+
+    const pending = inflight.get(key);
+    if (pending) {
+      return pending;
+    }
+
+    const promise = load()
+      .then((loaded) => {
+        entries.set(key, { value: loaded, expiresAt: Date.now() + ttlMs });
+        return loaded;
+      })
+      .finally(() => {
+        inflight.delete(key);
+      });
+
+    inflight.set(key, promise);
+    return promise;
+  };
+
+  const invalidate = (key?: string) => {
+    if (key === undefined) {
+      entries.clear();
+      return;
+    }
+    entries.delete(key);
+  };
+
+  return { run, invalidate };
+}
+
+// 自选股变动不频繁，缓存 60s 足以覆盖一次同步内的多次调用
+const groupsCache = createTtlCache<Awaited<ReturnType<EastMoneyClient["getWatchlistGroups"]>>>(60_000);
+const watchlistCache = createTtlCache<Awaited<ReturnType<EastMoneyClient["getWatchlist"]>>>(60_000);
+
+/** 自选股缓存按分组 key 隔离，避免不同分组互相覆盖 */
+function watchlistCacheKey(groupId: string | null, groupName: string | null) {
+  return `gid:${groupId ?? ""}|name:${groupName ?? ""}`;
+}
+
 // 简单健康检查
 app.get("/healthz", async () => "ok");
 
@@ -44,6 +97,9 @@ app.post("/watchlist-groups", { schema: { body: groupBodySchema } }, async (req,
   const { name } = req.body as { name: string };
   try {
     const ok = await client.createGroup(name);
+    // 分组结构已变，缓存立即失效
+    groupsCache.invalidate();
+    watchlistCache.invalidate();
     return { success: ok };
   } catch (e) {
     return errorReply(reply, e);
@@ -52,7 +108,7 @@ app.post("/watchlist-groups", { schema: { body: groupBodySchema } }, async (req,
 
 app.get("/watchlist-groups", async (_req, reply) => {
   try {
-    return await client.getWatchlistGroups();
+    return await groupsCache.run("all", () => client.getWatchlistGroups());
   } catch (e) {
     return errorReply(reply, e);
   }
@@ -62,6 +118,8 @@ app.delete("/watchlist-groups/:id", async (req, reply) => {
   const { id } = req.params as { id: string };
   try {
     const ok = await client.deleteGroup(id);
+    groupsCache.invalidate();
+    watchlistCache.invalidate();
     return { success: ok };
   } catch (e) {
     return errorReply(reply, e);
@@ -83,7 +141,10 @@ const codesBodySchema = {
 app.get("/watchlist", async (req, reply) => {
   const { groupId, groupName } = req.query as { groupId?: string; groupName?: string };
   try {
-    return await client.getWatchlist(groupId ?? null, groupName ?? null);
+    // 按分组分别缓存，避免不同分组互相串数据
+    return await watchlistCache.run(watchlistCacheKey(groupId ?? null, groupName ?? null), () =>
+      client.getWatchlist(groupId ?? null, groupName ?? null)
+    );
   } catch (e) {
     return errorReply(reply, e);
   }
@@ -93,6 +154,7 @@ app.post("/watchlist", { schema: { body: codesBodySchema } }, async (req, reply)
   const body = req.body as { codes: string[]; groupId?: string; groupName?: string };
   try {
     const ok = await client.addToWatchlist(body.codes, body.groupId ?? null, body.groupName ?? null);
+    watchlistCache.invalidate();
     return { success: ok };
   } catch (e) {
     return errorReply(reply, e);
@@ -103,6 +165,7 @@ app.delete("/watchlist", { schema: { body: codesBodySchema } }, async (req, repl
   const body = req.body as { codes: string[]; groupId?: string; groupName?: string };
   try {
     const ok = await client.removeFromWatchlist(body.codes, body.groupId ?? null, body.groupName ?? null);
+    watchlistCache.invalidate();
     return { success: ok };
   } catch (e) {
     return errorReply(reply, e);

@@ -3,6 +3,11 @@
 tunnel: a6db290c-b9bb-4190-9451-8b8b98455f44
 credentials-file: /etc/cloudflared/creds.json
 ingress:
+  # 前端 NEXT_PUBLIC_EM_API_URL=/em-api 为同源相对路径，需把该前缀转到自选同步服务。
+  # cloudflared 不做前缀重写，故经 nginx（其 location /em-api/ 会剥离前缀）转发。
+  - hostname: www.luckybrother.cc
+    path: /em-api/*
+    service: http://nginx:80
   - hostname: www.luckybrother.cc
     service: http://web:3000
   - hostname: api.luckybrother.cc

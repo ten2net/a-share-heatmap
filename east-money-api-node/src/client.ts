@@ -225,9 +225,13 @@ export class EastMoneyClient {
    */
   private async getWithAuthRetry<T>(
     action: string,
-    params: Record<string, string | number>
+    params: Record<string, string | number>,
+    options?: { retries?: number; timeoutMs?: number }
   ): Promise<{ ok: boolean; data: T | null }> {
-    const first = this.parseJsonp<T>(await this.get(this.buildUrl(action, params)));
+    const request = () =>
+      this.get(this.buildUrl(action, params), options?.retries, options?.timeoutMs);
+
+    const first = this.parseJsonp<T>(await request());
     if (first.ok || first.data != null) {
       return first;
     }
@@ -236,14 +240,16 @@ export class EastMoneyClient {
       // 未拿到 CUToken（失败负缓存或网络不可达），直接返回首次结果
       return first;
     }
-    return this.parseJsonp<T>(await this.get(this.buildUrl(action, params)));
+    return this.parseJsonp<T>(await request());
   }
 
   /** 获取所有自选股分组 */
   async getWatchlistGroups(): Promise<WatchlistGroup[]> {
+    // 前端同步对延迟敏感：缩短单次超时并减少重试，配合 server 层 60s 缓存
     const { data } = await this.getWithAuthRetry<{ ginfolist?: Array<Record<string, unknown>> }>(
       "ggdefstkindexinfos",
-      { g: 1 }
+      { g: 1 },
+      { retries: 3, timeoutMs: 8000 }
     );
     if (data == null) {
       return [];
@@ -299,7 +305,7 @@ export class EastMoneyClient {
 
     const { data: result } = await this.getWithAuthRetry<{
       stkinfolist?: Array<Record<string, unknown>>;
-    }>("gstkinfos", { g: groupId });
+    }>("gstkinfos", { g: groupId }, { retries: 3, timeoutMs: 8000 });
     if (result == null) {
       return [];
     }

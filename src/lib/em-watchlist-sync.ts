@@ -15,7 +15,7 @@ const apiBaseKey = "emWatchlist:apiBase";
 const intervalStorageKey = "emWatchlist:intervalSec";
 
 /** 自动同步缺省间隔（秒）与可选档位 */
-export const defaultEmSyncIntervalSec = 180;
+export const defaultEmSyncIntervalSec = 600;
 export const emSyncIntervalPresets = [60, 180, 300, 600] as const;
 
 /** 最近一次同步结果（模块级缓存，面板未打开时也能显示状态） */
@@ -43,7 +43,7 @@ type EmStock = {
 };
 
 export type EmSyncResult =
-  | { ok: true; items: WatchlistItem[]; syncedAt: string }
+  | { ok: true; items: WatchlistItem[]; remoteCount: number; syncedAt: string }
   | { ok: false; error: string; syncedAt: string };
 
 function storage() {
@@ -335,7 +335,14 @@ async function doSyncFromEmGroup(local: WatchlistItem[]): Promise<EmSyncResult> 
       return lastSyncResult;
     }
 
-    lastSyncResult = { ok: true, items: resolveSyncedWatchlist(local, remote), syncedAt };
+    // remoteCount 记录远端实际数量：本地合并去重后长度可能小于它（本地已有重叠条目），
+    // 调用方据此判断是否被上限截断，不能拿 items.length 判断。
+    lastSyncResult = {
+      ok: true,
+      items: resolveSyncedWatchlist(local, remote),
+      remoteCount: remote.length,
+      syncedAt,
+    };
     return lastSyncResult;
   } catch (error) {
     lastSyncResult = {
