@@ -35,10 +35,6 @@ export class EastMoneyClient {
   private token: string | null;
   /** 简易 cookie jar：key -> value */
   private cookies = new Map<string, string>();
-  /** CUToken 获取失败的时间戳（负缓存 5 分钟） */
-  private cutmFailedAt = 0;
-  /** 进行中的 CUToken 请求（并发去重） */
-  private cutmInflight: Promise<void> | null = null;
 
   constructor(options: EastMoneyClientOptions = {}) {
     this.appkey = options.appkey ?? null;
@@ -164,89 +160,22 @@ export class EastMoneyClient {
   // ============ 自选股分组管理 ============
 
   /**
-   * 惰性获取 CUToken：仅在 myfavor 响应表明需要鉴权时才调用。
-   * emweb 域名在部分机房网络不可达，失败负缓存 5 分钟，超时 3s；
-   * 并发请求共享同一个进行中的请求。
+   * myfavor 请求：自选接口要求带上 appkey 鉴权，无需 CUToken。
    */
-  private async ensureCutmToken(): Promise<void> {
-    if (this.cookies.has("CUToken")) {
-      return;
-    }
-    // 失败负缓存：5 分钟内不再尝试
-    if (Date.now() - this.cutmFailedAt < 5 * 60 * 1000) {
-      return;
-    }
-    this.cutmInflight ??= this.fetchCutmToken().finally(() => {
-      this.cutmInflight = null;
-    });
-    return this.cutmInflight;
-  }
-
-  private async fetchCutmToken(): Promise<void> {
-    try {
-      const ut = this.token ?? this.cookies.get("ut") ?? "";
-      if (!ut) {
-        return;
-      }
-
-      // 独立请求（不复用连接），失败非致命
-      const resp = await fetch(
-        `https://emweb.securities.eastmoney.com/pc_hsf10/pages/index.html?ut=${ut}`,
-        {
-          headers: {
-            "User-Agent": EastMoneyClient.HEADERS["User-Agent"],
-            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": EastMoneyClient.HEADERS["Accept-Language"],
-            Cookie: `ut=${ut}`,
-          },
-          redirect: "follow",
-          signal: AbortSignal.timeout(3000),
-        }
-      );
-      // 从响应 Set-Cookie 中提取 CUToken
-      const setCookies = resp.headers.getSetCookie?.() ?? [];
-      for (const sc of setCookies) {
-        const [pair] = sc.split(";");
-        const idx = pair.indexOf("=");
-        if (idx !== -1 && pair.slice(0, idx).trim() === "CUToken") {
-          this.cookies.set("CUToken", pair.slice(idx + 1).trim());
-        }
-      }
-    } catch {
-      // 获取 CUToken 失败（非致命）：记录失败时间，5 分钟内不再尝试
-      this.cutmFailedAt = Date.now();
-    }
-  }
-
-  /**
-   * 带惰性 CUToken 重试的 myfavor 请求：
-   * 先直接请求（读操作通常不需要 CUToken），仅当响应表明鉴权失败
-   * （state 非 0 且 data 为空）时才取 CUToken 并重试一次。
-   */
-  private async getWithAuthRetry<T>(
+  private async getMyfavor<T>(
     action: string,
     params: Record<string, string | number>,
     options?: { retries?: number; timeoutMs?: number }
   ): Promise<{ ok: boolean; data: T | null }> {
-    const request = () =>
-      this.get(this.buildUrl(action, params), options?.retries, options?.timeoutMs);
-
-    const first = this.parseJsonp<T>(await request());
-    if (first.ok || first.data != null) {
-      return first;
-    }
-    await this.ensureCutmToken();
-    if (!this.cookies.has("CUToken")) {
-      // 未拿到 CUToken（失败负缓存或网络不可达），直接返回首次结果
-      return first;
-    }
-    return this.parseJsonp<T>(await request());
+    return this.parseJsonp<T>(
+      await this.get(this.buildUrl(action, params), options?.retries, options?.timeoutMs)
+    );
   }
 
   /** 获取所有自选股分组 */
   async getWatchlistGroups(): Promise<WatchlistGroup[]> {
     // 前端同步对延迟敏感：缩短单次超时并减少重试，配合 server 层 60s 缓存
-    const { data } = await this.getWithAuthRetry<{ ginfolist?: Array<Record<string, unknown>> }>(
+    const { data } = await this.getMyfavor<{ ginfolist?: Array<Record<string, unknown>> }>(
       "ggdefstkindexinfos",
       { g: 1 },
       { retries: 3, timeoutMs: 8000 }
@@ -269,13 +198,13 @@ export class EastMoneyClient {
 
   /** 创建分组 */
   async createGroup(name: string): Promise<boolean> {
-    const { ok } = await this.getWithAuthRetry("ag", { gn: name });
+    const { ok } = await this.getMyfavor("ag", { gn: name });
     return ok;
   }
 
   /** 删除分组 */
   async deleteGroup(groupId: string): Promise<boolean> {
-    const { ok } = await this.getWithAuthRetry("dg", { g: groupId });
+    const { ok } = await this.getMyfavor("dg", { g: groupId });
     return ok;
   }
 
@@ -303,7 +232,7 @@ export class EastMoneyClient {
       return [];
     }
 
-    const { data: result } = await this.getWithAuthRetry<{
+    const { data: result } = await this.getMyfavor<{
       stkinfolist?: Array<Record<string, unknown>>;
     }>("gstkinfos", { g: groupId }, { retries: 3, timeoutMs: 8000 });
     if (result == null) {
@@ -376,20 +305,9 @@ export class EastMoneyClient {
     return true;
   }
 
-  /** 单批添加；state 非 0/-217 时可能是缺 CUToken，取 token 后重试一次 */
+  /** 单批添加 */
   private async aslotBatch(groupId: string, batch: string[]): Promise<boolean> {
-    const result = await this.aslotOnce(groupId, batch);
-    if (result === "ok") {
-      return true;
-    }
-    if (result === "fail") {
-      // 可能是缺少 CUToken 导致的鉴权失败：取 token 后重试一次
-      await this.ensureCutmToken();
-      if (this.cookies.has("CUToken") && (await this.aslotOnce(groupId, batch)) === "ok") {
-        return true;
-      }
-    }
-    return false;
+    return (await this.aslotOnce(groupId, batch)) === "ok";
   }
 
   /** state=-217 表示"该证券代码已存在"，视为成功；error 表示解析失败 */
@@ -439,7 +357,7 @@ export class EastMoneyClient {
 
     const failed: string[] = [];
     for (const code of emCodes) {
-      const { ok } = await this.getWithAuthRetry("ds", { g: groupId, sc: code });
+      const { ok } = await this.getMyfavor("ds", { g: groupId, sc: code });
       if (!ok) {
         console.error(`删除失败: ${code}`);
         failed.push(code);
