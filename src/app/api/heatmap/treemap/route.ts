@@ -6,6 +6,7 @@ import {
   isHeatmapPeriodKey,
   isMarketKey,
   parseStockCodeList,
+  PeriodDataUnavailableError,
 } from "@/lib/market-heatmap";
 
 export const maxDuration = 60;
@@ -61,7 +62,7 @@ export async function GET(request: NextRequest) {
         success: false,
         message: error instanceof Error ? error.message : "Failed to load treemap data",
       },
-      { status: 502 }
+      { status: error instanceof PeriodDataUnavailableError ? 503 : 502 }
     );
   }
 }

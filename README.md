@@ -9,8 +9,8 @@
 支持沪深 A 股全图、沪深 300、中证 A50、中证 A500、A 股主板、创业板、科创板等多个市场范围切换，也可以按一级行业板块单独查看热力图，或用股票名称/代码添加自选列表；涨跌区间支持当日、近 5 日、近 20 日、今年以来等多个周期，适合作为个人盘前盘后复盘工具，或嵌入财经站点、量化研究平台的市场概览模块。
 
 <p align="center">
-  <a href="https://map.wenyuanw.me">
-    <img src="https://img.shields.io/badge/在线预览-map.wenyuanw.me-1f6feb?style=for-the-badge&logo=vercel&logoColor=white" alt="在线预览" />
+  <a href="https://dapan.app">
+    <img src="https://img.shields.io/badge/在线预览-dapan.app-1f6feb?style=for-the-badge&logo=vercel&logoColor=white" alt="在线预览" />
   </a>
   &nbsp;
   <a href="https://vercel.com/new/clone?repository-url=https://github.com/wenyuanw/a-share-heatmap">
@@ -173,6 +173,8 @@ pnpm build      # 生产构建
 pnpm start      # 启动生产服务
 pnpm lint       # ESLint 检查
 pnpm typecheck  # TypeScript 类型检查
+pnpm test       # vitest 单元测试
+pnpm test:watch # watch 模式运行单元测试
 ```
 
 ## 数据说明
@@ -188,6 +190,8 @@ pnpm refresh:data  # 校验通过后更新两份内置快照
 
 仓库中的“刷新 A 股股票池”工作流会在每个工作日北京时间 18:30 自动运行，校验股票数量、代码唯一性和市值字段覆盖率，通过后提交数据变化并触发后续部署。
 
+刷新脚本优先使用东方财富全市场名册，分页时复用可用镜像并限制并发；接口连续失败时，自动切换腾讯批量行情刷新现有股票的价格、涨跌和市值。备用源保留原有名册及行业映射，不根据缺失行情删除股票；新股和退市信息待东方财富恢复后同步。腾讯有效行情覆盖不足 90% 时仍会报错，保留原文件。可用 `pnpm check:data --source=tencent` 单独验证备用源，或用 `--source=eastmoney` 严格验证主源。
+
 ## 技术栈
 
 - Next.js App Router
@@ -195,6 +199,25 @@ pnpm refresh:data  # 校验通过后更新两份内置快照
 - Canvas 2D
 - Tailwind CSS
 - Vercel Serverless Functions
+
+## 赞赏支持
+
+这个项目是业余时间维护的。如果这张热力图对你的复盘有帮助，可以扫码请作者喝杯咖啡：
+
+<p align="center">
+  <img src="./public/sponsor/reward-cover.jpg" alt="赞赏码：请作者喝杯咖啡" width="320" />
+</p>
+
+也可以直接通过 [GitHub Sponsors](https://github.com/sponsors/wenyuanw) 支持。
+
+感谢每一位支持项目的朋友，你们的鼓励让我更有动力持续维护和改进。
+
+<!-- supporters:start -->
+
+- [laojuelv.com](https://laojuelv.com)
+- 拾伍、LZ、Gin 等群友
+
+<!-- supporters:end -->
 
 ## 参考与致谢
 

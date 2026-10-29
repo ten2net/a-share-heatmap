@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: "A 股市场热力图 | A 股大盘云图",
   description: "A 股市场热力图，开源免费的大盘云图，支持行业权重、涨跌颜色、缩放、平移、全屏与截图分享。",
   keywords: ["A 股热力图", "A 股大盘云图", "A股图表", "行情地图", "板块热力图", "A-share heatmap", "A-share market heatmap"],
-  metadataBase: new URL("https://map.wenyuanw.me"),
+  metadataBase: new URL("https://dapan.app"),
   alternates: {
     canonical: "/",
   },

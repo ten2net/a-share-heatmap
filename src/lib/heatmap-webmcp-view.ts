@@ -6,6 +6,7 @@ import {
   type HeatmapUniverse,
 } from "@/lib/market-heatmap";
 import {
+  getCurrentTreemapData,
   getCurrentTreemapStocks,
   getDataFreshness,
   type HeatmapSizeMode,
@@ -81,11 +82,15 @@ function getBoardRankings(context: HeatmapWebMcpContext, limit: number, sortBy: 
   const rankings = Array.from(groups, ([name, boardStocks]) => {
     const marketCap = boardStocks.reduce((sum, stock) => sum + stock.marketCap, 0);
     const turnoverAmount = boardStocks.reduce((sum, stock) => sum + stock.turnoverAmount, 0);
-    const changePct = marketCap > 0
-      ? boardStocks.reduce((sum, stock) => sum + stock.changePct * stock.marketCap, 0) / marketCap
-      : boardStocks.reduce((sum, stock) => sum + stock.changePct, 0) / Math.max(1, boardStocks.length);
-    const advanceCount = boardStocks.filter((stock) => stock.changePct > 0.1).length;
-    const declineCount = boardStocks.filter((stock) => stock.changePct < -0.1).length;
+    const pricedStocks = boardStocks.filter((stock) => stock.changePct !== null);
+    const pricedMarketCap = pricedStocks.reduce((sum, stock) => sum + stock.marketCap, 0);
+    const changePct = pricedStocks.length === 0
+      ? null
+      : pricedMarketCap > 0
+        ? pricedStocks.reduce((sum, stock) => sum + stock.changePct! * stock.marketCap, 0) / pricedMarketCap
+        : pricedStocks.reduce((sum, stock) => sum + stock.changePct!, 0) / pricedStocks.length;
+    const advanceCount = pricedStocks.filter((stock) => stock.changePct! > 0.1).length;
+    const declineCount = pricedStocks.filter((stock) => stock.changePct! < -0.1).length;
 
     return {
       name,
@@ -94,7 +99,7 @@ function getBoardRankings(context: HeatmapWebMcpContext, limit: number, sortBy: 
       turnoverAmount,
       marketCap,
       advanceCount,
-      flatCount: boardStocks.length - advanceCount - declineCount,
+      flatCount: pricedStocks.length - advanceCount - declineCount,
       declineCount,
     };
   });
@@ -103,6 +108,8 @@ function getBoardRankings(context: HeatmapWebMcpContext, limit: number, sortBy: 
     if (sortBy === "stockCount") return right.stockCount - left.stockCount;
     if (sortBy === "turnoverAmount") return right.turnoverAmount - left.turnoverAmount;
     if (sortBy === "marketCap") return right.marketCap - left.marketCap;
+    if (left.changePct === null) return right.changePct === null ? 0 : 1;
+    if (right.changePct === null) return -1;
     return right.changePct - left.changePct;
   });
 
@@ -119,7 +126,7 @@ export function createHeatmapViewWebMcpTools(context: HeatmapWebMcpContext): Web
     annotations: { readOnlyHint: true, untrustedContentHint: false },
     execute: async () => {
       const state = context.stateRef.current;
-      const data = state.visibleTreemapData ?? state.treemapData;
+      const data = getCurrentTreemapData(context);
       const freshness = getDataFreshness(context);
       return {
         market: state.market,
@@ -231,7 +238,7 @@ export function createHeatmapViewWebMcpTools(context: HeatmapWebMcpContext): Web
         if (!Array.isArray(input.boardNames) || input.boardNames.some((name) => typeof name !== "string")) {
           throw new Error("boardNames must be an array of board name strings.");
         }
-        const available = new Set((state.treemapData ?? state.visibleTreemapData)?.nodes.map((board) => board.name) ?? []);
+        const available = new Set(getCurrentTreemapData(context)?.nodes.map((board) => board.name) ?? []);
         const boardNames = input.boardNames.map((name) => name.trim()).filter(Boolean);
         const unknown = boardNames.filter((name) => !available.has(name));
         if (unknown.length > 0) throw new Error(`Unknown board name(s): ${unknown.join(", ")}.`);
@@ -280,7 +287,9 @@ export function createHeatmapViewWebMcpTools(context: HeatmapWebMcpContext): Web
       if (sortBy !== "changePct" && sortBy !== "turnoverAmount" && sortBy !== "marketCap") throw new Error(`Unknown sortBy "${String(sortBy)}".`);
       const direction = input.direction ?? "desc";
       if (direction !== "desc" && direction !== "asc") throw new Error(`Unknown direction "${String(direction)}".`);
-      const stocks = getCurrentTreemapStocks(context);
+      const stocks = getCurrentTreemapStocks(context).filter(
+        (stock) => sortBy !== "changePct" || stock.changePct !== null
+      );
       stocks.sort((left, right) => {
         const leftValue = left[sortBy as "changePct" | "turnoverAmount" | "marketCap"];
         const rightValue = right[sortBy as "changePct" | "turnoverAmount" | "marketCap"];

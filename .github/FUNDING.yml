@@ -1,0 +1,20 @@
+# 这些是 GitHub 支持的赞助平台，取消注释并填入账号即可在仓库顶部显示 Sponsor 按钮。
+# 详见 https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+
+# GitHub Sponsors：仓库顶部会出现 Sponsor 按钮
+# 注意这里填用户名（不是完整 URL），最多 4 个，例如 [user1, user2]
+github: wenyuanw
+# patreon: # Patreon 用户名
+# open_collective: # Open Collective 名称
+# ko_fi: # Ko-fi 用户名
+# tidelift: # Tidelift 平台名/包名，例如 npm/babel
+# community_bridge: # LFX Mentorship 项目名
+# liberapay: # Liberapay 用户名
+# issuehunt: # IssueHunt 用户名
+# lfx_crowdfunding: # LFX Crowdfunding 项目名
+# polar: # Polar 用户名
+# buy_me_a_coffee: # Buy Me a Coffee 用户名
+# thanks_dev: # thanks.dev 用户名
+
+# 微信赞赏码：指向 README 的「赞赏支持」小节（每行一个，最多 4 个）。
+custom: ["https://github.com/wenyuanw/a-share-heatmap#%E8%B5%9E%E8%B5%8F%E6%94%AF%E6%8C%81"]

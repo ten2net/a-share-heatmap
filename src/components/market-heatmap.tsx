@@ -3,36 +3,26 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
-  type ReactNode,
-  type RefObject,
 } from "react";
 import {
   Camera,
-  Bot,
-  Check,
   ChevronLeft,
   ChevronRight,
   Copy,
   Download,
-  ExternalLink,
   Info,
-  Keyboard,
   LayoutGrid,
   ListFilter,
   Loader2,
-  Mail,
   Menu,
   Maximize2,
-  Megaphone,
   Minimize2,
   Moon,
-  Palette,
   Pencil,
   Plus,
   RotateCcw,
@@ -45,56 +35,36 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 
 import { Button } from "@/components/ui/button";
-import { WatchlistManager } from "@/components/watchlist-panel";
 import { cn } from "@/lib/utils";
 import { getMessages, type HeatmapMessages, type Locale } from "@/lib/i18n";
 import {
-  boardHeaderColorFromTheme,
-  buildHeatThemeExport,
-  builtinHeatThemes,
-  cloneHeatTheme,
-  createCustomHeatTheme,
   customHeatThemesStorageKey,
   defaultHeatThemeId,
-  heatStopFields,
   heatThemeStorageKey,
   legendGradientFromTheme,
-  parseHeatThemeExport,
   parseStoredCustomHeatThemes,
   mergeSeedHeatThemes,
   heatThemesSeedStorageKey,
-  previewGradientFromStops,
   resolveHeatTheme,
-  rgbToHex,
   serializeCustomHeatThemes,
-  parseHexColor,
-  heatColorFromTheme,
-  uiChangeTextColor,
-  uiPolarityColor,
-  type HeatStopField,
   type HeatTheme,
 } from "@/lib/heatmap-themes";
 import {
   defaultShortcutBindings,
-  formatShortcutKey,
   formatShortcutLabel,
   parseStoredShortcuts,
   resolveShortcutAction,
   serializeShortcuts,
-  shortcutActionIds,
   shortcutStorageKey,
-  withReboundShortcut,
-  type ShortcutActionId,
   type ShortcutBindings,
 } from "@/lib/heatmap-shortcuts";
 import {
-  heatmapPeriodKeys,
   isHeatmapPeriodKey,
   isHeatmapUniverse,
-  marketKeys,
+  periodDataUnavailableCode,
   watchlistMaxCount,
   watchlistUniverseKey,
   getBundledSnapshotTreemap,
@@ -103,7 +73,6 @@ import {
   type MarketDataSource,
   type MarketKey,
   type MarketOverviewResponse,
-  type ProgressiveQuoteEvent,
   type TreemapResponse,
 } from "@/lib/market-heatmap";
 import {
@@ -120,468 +89,135 @@ import {
   syncFromEmGroup,
 } from "@/lib/em-watchlist-sync";
 import { useHeatmapWebMcp } from "@/hooks/use-heatmap-webmcp";
-
-type QuoteMap = Record<string, { price: number; changePct: number; turnoverAmount: number }>;
-
-type QuoteStreamEvent =
-  | ProgressiveQuoteEvent
-  | {
-      type: "error";
-      message: string;
-    };
-
-type QuoteLoadProgress = {
-  active: boolean;
-  loadedCount: number;
-  totalCount: number;
-};
-
-type PendingQuoteCommit = {
-  quotes: QuoteMap;
-  loadedCount: number;
-  totalCount: number;
-  updatedAt: string;
-};
-
-const inspectorSortKeys = ["changeDesc", "changeAsc", "changeAbs", "turnover", "name"] as const;
-type InspectorSortKey = (typeof inspectorSortKeys)[number];
-
-type InspectorStockItem = {
-  code: string;
-  name: string;
-  subBoardName: string;
-  price: number;
-  changePct: number;
-  turnoverAmount: number;
-  marketCap: number;
-};
-
-type StockRect = {
-  code: string;
-  name: string;
-  boardName: string;
-  subBoardName: string;
-  value: number;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  price: number;
-  changePct: number;
-};
-
-type BoardTrendStats = {
-  advanceCount: number;
-  flatCount: number;
-  declineCount: number;
-};
-
-type SectorVisualStats = BoardTrendStats & {
-  changePct: number;
-};
-
-type BoardRect = {
-  name: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  stockCount: number;
-  titleHeight: number;
-  changePct: number;
-  advanceCount: number;
-  flatCount: number;
-  declineCount: number;
-};
-
-type SubBoardRect = {
-  name: string;
-  boardName: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  stockCount: number;
-  titleHeight: number;
-  changePct: number;
-  advanceCount: number;
-  flatCount: number;
-  declineCount: number;
-};
-
-type TreemapInput<T> = {
-  item: T;
-  value: number;
-};
-
-type TreemapRect<T> = {
-  item: T;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
-
-type Bounds = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
-
-type MarketSummary = {
-  changePct: number;
-  stockCount: number;
-  updatedAt: string;
-};
-
-type MarketOverview = {
-  advanceCount: number;
-  flatCount: number;
-  declineCount: number;
-  turnoverAmount: number;
-  turnoverPreviousAmount: number;
-  turnoverDelta: number;
-};
-
-type ScreenshotPreview = {
-  url: string;
-  filename: string;
-  blob: Blob;
-};
-
-type PriceColorMode = "red-rise" | "green-rise";
-type ThemeColorKey = "green" | "red" | "blue" | "violet";
-type DisplayMode = "dark" | "light";
-type FilterOpenMode = "click" | "hover";
-type SettingsTab = "appearance" | "watchlist" | "shortcuts" | "help" | "webmcp" | "project";
-type HeatmapSizeMode = "marketCap" | "amount" | "turnoverRate";
-
-const marketOptions: MarketKey[] = [...marketKeys];
-const periodOptions: HeatmapPeriodKey[] = [...heatmapPeriodKeys];
-
-function createEmptyWatchlistTreemap(period: HeatmapPeriodKey): TreemapResponse {
-  return {
-    market: "all",
-    period,
-    updatedAt: "",
-    stockCount: 0,
-    boardCount: 0,
-    summary: {
-      advanceCount: 0,
-      flatCount: 0,
-      declineCount: 0,
-      turnoverAmount: 0,
-      turnoverPreviousAmount: 0,
-      turnoverDelta: 0,
-      indexChangePct: 0,
-    },
-    nodes: [],
-    source: "direct",
-  };
-}
-const allBoardsValue = "__all__";
-const allTrendsValue = "__all__";
-const risingOnlyValue = "__rising__";
-const fallingOnlyValue = "__falling__";
-const marketStorageKey = "heatmap-market";
-const periodStorageKey = "heatmap-period";
-const boardFilterStorageKey = "heatmap-board-filter";
-const trendFilterStorageKey = "heatmap-trend-filter";
-const changeRangeFilterStorageKey = "heatmap-change-range-filter";
-const filterOpenModeStorageKey = "heatmap-filter-open-mode";
-const thumbnailModeStorageKey = "heatmap-thumbnail-mode";
-const headerTrendStatsStorageKey = "heatmap-header-trend-stats";
-const heatmapBordersStorageKey = "heatmap-borders";
-const heatmapBordersQueryKey = "borders";
-const refreshIntervalStorageKey = "heatmap-refresh-interval";
-const defaultRefreshIntervalSeconds = 8;
-const minRefreshIntervalSeconds = 3;
-const maxRefreshIntervalSeconds = 600;
-const progressiveQuoteCommitIntervalMs = 500;
-const emptyQuoteMap: QuoteMap = {};
-
-function parseHeatmapBordersQuery(value: string | null) {
-  if (value === null) {
-    return null;
-  }
-
-  const normalized = value.trim().toLowerCase();
-  if (["on", "show", "true", "1"].includes(normalized)) {
-    return true;
-  }
-  if (["off", "hide", "false", "0"].includes(normalized)) {
-    return false;
-  }
-  return null;
-}
-
-function normalizeRefreshIntervalSeconds(raw: string | null): number {
-  const parsed = Number.parseInt(raw ?? "", 10);
-  if (!Number.isFinite(parsed)) {
-    return defaultRefreshIntervalSeconds;
-  }
-  return Math.min(maxRefreshIntervalSeconds, Math.max(minRefreshIntervalSeconds, parsed));
-}
-const filterHoverOpenDelayMs = 180;
-const filterHoverCloseDelayMs = 160;
-const changeRangeSliderMin = -20;
-const changeRangeSliderMax = 20;
-const changeRangeSliderStep = 1;
-const changeRangeSliderTicks = [-20, -10, 0, 10, 20] as const;
-const changeRangeSpanPresets = [
-  { min: -3, max: 3, label: "±3%" },
-  { min: -5, max: 5, label: "±5%" },
-  { min: 0, max: 5, label: "0~5%" },
-  { min: 5, max: 10, label: "5~10%" },
-  { min: -5, max: 0, label: "-5~0%" },
-  { min: -10, max: -5, label: "-10~-5%" },
-] as const;
-
-type ChangeRangeFilter = {
-  min: number | null;
-  max: number | null;
-};
-
-const emptyChangeRangeFilter: ChangeRangeFilter = { min: null, max: null };
-
-function parseStoredBoardFilter(raw: string | null): string[] {
-  if (!raw || raw === allBoardsValue) {
-    return [];
-  }
-
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      return parsed.filter(
-        (item): item is string => typeof item === "string" && item.length > 0 && item !== allBoardsValue
-      );
-    }
-    if (typeof parsed === "string" && parsed.length > 0 && parsed !== allBoardsValue) {
-      return [parsed];
-    }
-  } catch {
-    /* Legacy single-board names are stored as plain strings. */
-  }
-
-  return [raw];
-}
-
-function boardFiltersEqual(left: string[], right: string[]) {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return left.every((name, index) => name === right[index]);
-}
-
-function sanitizeBoardFilter(selected: string[], availableNames: string[]) {
-  const available = new Set(availableNames);
-  return selected.filter((name) => available.has(name));
-}
-
-function toggleBoardInFilter(current: string[], boardName: string) {
-  if (current.length === 0) {
-    return [boardName];
-  }
-
-  if (current.includes(boardName)) {
-    return current.filter((name) => name !== boardName);
-  }
-
-  return [...current, boardName];
-}
-
-function changeRangeFiltersEqual(left: ChangeRangeFilter, right: ChangeRangeFilter) {
-  return left.min === right.min && left.max === right.max;
-}
-
-function isChangeRangeActive(range: ChangeRangeFilter) {
-  return range.min !== null || range.max !== null;
-}
-
-function formatChangeRangeSummary(range: ChangeRangeFilter) {
-  if (range.min !== null && range.max !== null) {
-    return `${range.min}% ~ ${range.max}%`;
-  }
-
-  if (range.min !== null) {
-    return `≥${range.min}%`;
-  }
-
-  if (range.max !== null) {
-    return `≤${range.max}%`;
-  }
-
-  return "";
-}
-
-function countActiveViewFilters(
-  boardFilter: string[],
-  trendFilter: string,
-  changeRangeFilter: ChangeRangeFilter
-) {
-  return (
-    (boardFilter.length > 0 ? 1 : 0) +
-    (trendFilter !== allTrendsValue ? 1 : 0) +
-    (isChangeRangeActive(changeRangeFilter) ? 1 : 0)
-  );
-}
-
-function formatChangeRangeInput(value: number | null) {
-  return value === null ? "" : String(value);
-}
-
-function parseChangeRangeInput(raw: string, fallback: number | null) {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function normalizeChangeRangeFilter(range: ChangeRangeFilter): ChangeRangeFilter {
-  if (range.min !== null && range.max !== null && range.min > range.max) {
-    return { min: range.max, max: range.min };
-  }
-
-  return range;
-}
-
-function parseStoredChangeRangeFilter(raw: string | null): ChangeRangeFilter {
-  if (!raw) {
-    return emptyChangeRangeFilter;
-  }
-
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") {
-      return emptyChangeRangeFilter;
-    }
-
-    const record = parsed as { min?: unknown; max?: unknown };
-    const min = typeof record.min === "number" && Number.isFinite(record.min) ? record.min : null;
-    const max = typeof record.max === "number" && Number.isFinite(record.max) ? record.max : null;
-    return normalizeChangeRangeFilter({ min, max });
-  } catch {
-    return emptyChangeRangeFilter;
-  }
-}
-
-function snapChangeRangeValue(value: number) {
-  const snapped = Math.round(value / changeRangeSliderStep) * changeRangeSliderStep;
-  return Math.min(changeRangeSliderMax, Math.max(changeRangeSliderMin, snapped));
-}
-
-function filterToSliderBounds(range: ChangeRangeFilter) {
-  return {
-    min: range.min === null ? changeRangeSliderMin : snapChangeRangeValue(range.min),
-    max: range.max === null ? changeRangeSliderMax : snapChangeRangeValue(range.max),
-  };
-}
-
-function formatChangeRangeBound(value: number) {
-  if (value > 0) {
-    return `+${value}%`;
-  }
-
-  return `${value}%`;
-}
-
-function matchesChangeRange(changePct: number, range: ChangeRangeFilter) {
-  if (range.min !== null && changePct < range.min) {
-    return false;
-  }
-
-  if (range.max !== null && changePct > range.max) {
-    return false;
-  }
-
-  return true;
-}
-const colorLegendSteps = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
-const legendTicks = [-4, -2, 0, 2, 4] as const;
-const minZoom = 1;
-const desktopMaxZoom = 8;
-const mobileMaxZoom = 12;
-const flatThreshold = 0.1;
-const githubProjectUrl = "https://github.com/wenyuanw/a-share-heatmap";
-const authorEmail = "hi@wenyuanw.me";
-const authorMailto = `mailto:${authorEmail}`;
-
-const themeColors: Record<
-  ThemeColorKey,
-  {
-    swatch: string;
-    foreground: string;
-  }
-> = {
-  green: { swatch: "#22c55e", foreground: "#041108" },
-  red: { swatch: "#ef4444", foreground: "#ffffff" },
-  blue: { swatch: "#38bdf8", foreground: "#031018" },
-  violet: { swatch: "#a78bfa", foreground: "#13091f" },
-};
-
-const heatmapCanvasThemes: Record<
-  DisplayMode,
-  {
-    backgroundStart: string;
-    backgroundEnd: string;
-    boardFill: string;
-    subBoardFill: string;
-    subBoardBorder: string;
-    activeSubBoardStroke: string;
-    activeSubBoardInner: string;
-    boardBorder: string;
-    activeBoardStroke: string;
-    highlightOuter: string;
-    highlightInner: string;
-    chrome: string;
-  }
-> = {
-  dark: {
-    backgroundStart: "#171b22",
-    backgroundEnd: "#10141b",
-    boardFill: "#20252d",
-    subBoardFill: "rgba(18, 23, 31, 0.62)",
-    subBoardBorder: "rgba(148, 163, 184, 0.3)",
-    activeSubBoardStroke: "#5eead4",
-    activeSubBoardInner: "rgba(8, 47, 73, 0.92)",
-    boardBorder: "rgba(148, 163, 184, 0.48)",
-    activeBoardStroke: "#f6d36d",
-    highlightOuter: "rgba(2, 6, 23, 0.92)",
-    highlightInner: "#f8fafc",
-    chrome: "#10141b",
-  },
-  light: {
-    backgroundStart: "#f6f8fb",
-    backgroundEnd: "#e8eef6",
-    boardFill: "#d8e0eb",
-    subBoardFill: "rgba(255, 255, 255, 0.82)",
-    subBoardBorder: "rgba(100, 116, 139, 0.26)",
-    activeSubBoardStroke: "#0f766e",
-    activeSubBoardInner: "rgba(15, 118, 110, 0.28)",
-    boardBorder: "rgba(71, 85, 105, 0.34)",
-    activeBoardStroke: "#b45309",
-    highlightOuter: "rgba(15, 23, 42, 0.42)",
-    highlightInner: "#ffffff",
-    chrome: "#e8eef6",
-  },
-};
-
-function GitHubMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden className={className}>
-      <path d="M12 .5C5.65.5.5 5.66.5 12.03c0 5.1 3.3 9.43 7.87 10.95.58.1.79-.25.79-.56l-.02-2.16c-3.2.7-3.88-1.55-3.88-1.55-.52-1.34-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.78 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.28-5.23-5.7 0-1.26.45-2.3 1.19-3.1-.12-.3-.52-1.5.11-3.13 0 0 .97-.31 3.19 1.18a10.9 10.9 0 0 1 5.8 0c2.21-1.5 3.18-1.18 3.18-1.18.64 1.63.24 2.83.12 3.13.74.8 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.25 5.68.41.36.78 1.08.78 2.18l-.01 3.23c0 .31.2.67.8.55A11.54 11.54 0 0 0 23.5 12.03C23.5 5.66 18.35.5 12 .5Z" />
-    </svg>
-  );
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
+import { GitHubMark } from "@/components/heatmap/github-mark";
+import { InspectorHeaderSparkline, InspectorSortControls } from "@/components/heatmap/inspector-parts";
+import { MobileStockSheet } from "@/components/heatmap/mobile-stock-sheet";
+import { HeatmapLoadingOverlay } from "@/components/heatmap/loading-overlay";
+import { RewardTipTrigger } from "@/components/heatmap/reward-tip";
+import { FilterPanel, FilterPopover } from "@/components/heatmap/filter-panel";
+import { getCanvasViewportBounds, intersectsBounds } from "@/components/heatmap/canvas-viewport";
+import {
+  getBoardHeaderColor,
+  getChangeTextColor,
+  getFallTextColor,
+  getHeatColor,
+  getLegendGradient,
+  getRiseTextColor,
+} from "@/components/heatmap/colors";
+import {
+  allTrendsValue,
+  boardFilterStorageKey,
+  changeRangeFilterStorageKey,
+  defaultRefreshIntervalSeconds,
+  desktopMaxZoom,
+  emptyChangeRangeFilter,
+  emptyQuoteMap,
+  fallingOnlyValue,
+  filterHoverCloseDelayMs,
+  filterHoverOpenDelayMs,
+  filterOpenModeStorageKey,
+  flatThreshold,
+  githubProjectUrl,
+  headerTrendStatsStorageKey,
+  heatmapBordersQueryKey,
+  heatmapBordersStorageKey,
+  heatmapCanvasThemes,
+  legendTicks,
+  marketOptions,
+  marketStorageKey,
+  minZoom,
+  mobileMaxZoom,
+  periodStorageKey,
+  progressiveQuoteCommitIntervalMs,
+  refreshIntervalStorageKey,
+  risingOnlyValue,
+  themeColors,
+  thumbnailModeStorageKey,
+  trendFilterStorageKey,
+} from "@/components/heatmap/constants";
+import {
+  compareInspectorStocks,
+  cycleInspectorSortKey,
+  formatBoardTrendCounts,
+  formatChange,
+  formatCompactChange,
+  formatCount,
+  formatPrice,
+  formatShareTimestamp,
+  formatTurnoverAmount,
+  getCompactMarketLabel,
+  getCompactPeriodLabel,
+  getDailyKlineUrl,
+  getLiveTurnoverAmount,
+  getPeriodLabel,
+  getSparklineUrl,
+  getTurnoverTrend,
+  parseStockCode,
+  toXueqiuSymbol,
+  withShortcutTitle,
+} from "@/components/heatmap/format";
+import {
+  boardFiltersEqual,
+  countActiveViewFilters,
+  formatChangeRangeInput,
+  formatChangeRangeSummary,
+  isChangeRangeActive,
+  matchesChangeRange,
+  normalizeChangeRangeFilter,
+  normalizeRefreshIntervalSeconds,
+  parseChangeRangeInput,
+  parseHeatmapBordersQuery,
+  parseStoredBoardFilter,
+  parseStoredChangeRangeFilter,
+  sanitizeBoardFilter,
+  toggleBoardInFilter,
+} from "@/components/heatmap/filters";
+import {
+  applySizeModeToTreemapData,
+  binaryTreemap,
+  buildSectorVisualStats,
+  countStockTrends,
+  createEmptyWatchlistTreemap,
+  filterTreemapByStockPredicate,
+  groupStocksBySubBoard,
+  sectorStatsKey,
+  weightedAverageChange,
+} from "@/components/heatmap/treemap";
+import {
+  drawSectorHeaderLabel,
+  drawSectorThumbnailLabel,
+  drawStockLabel,
+  heatmapFont,
+} from "@/components/heatmap/canvas-text";
+import {
+  canvasToBlob,
+  drawShareLogoRaster,
+  loadShareLogoRaster,
+  readQuoteStream,
+  useIsMobile,
+  usePollWhileVisible,
+} from "@/components/heatmap/stream";
+import { clamp } from "@/lib/utils";
+import {
+  type BoardRect,
+  type ChangeRangeFilter,
+  type DisplayMode,
+  type FilterOpenMode,
+  type HeatmapSizeMode,
+  type InspectorSortKey,
+  type InspectorStockItem,
+  type MarketOverview,
+  type MarketSummary,
+  type PendingQuoteCommit,
+  type PriceColorMode,
+  type QuoteLoadProgress,
+  type QuoteMap,
+  type ScreenshotPreview,
+  type SettingsTab,
+  type StockRect,
+  type SubBoardRect,
+  type ThemeColorKey,
+} from "@/components/heatmap/types";
 
 function clampOffset(width: number, height: number, scale: number, x: number, y: number) {
   if (scale <= 1) {
@@ -597,3884 +233,10 @@ function clampOffset(width: number, height: number, scale: number, x: number, y:
   };
 }
 
-function trimTrailingZeros(text: string) {
-  return text.replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
-}
-
-function formatPrice(value: number) {
-  return value.toFixed(value >= 100 ? 1 : 2);
-}
-
-function formatChange(value: number) {
-  if (value > 0) {
-    return `+${value.toFixed(2)}%`;
-  }
-
-  return `${value.toFixed(2)}%`;
-}
-
-function formatCompactChange(value: number) {
-  const absValue = Math.abs(value);
-  const digits = absValue >= 10 ? 1 : 2;
-  const text = trimTrailingZeros(value.toFixed(digits));
-  return value > 0 ? `+${text}%` : `${text}%`;
-}
-
-function formatBoardTrendCounts(messages: HeatmapMessages, advanceCount: number, declineCount: number) {
-  return messages.boardTrendCounts.replace("{advance}", String(advanceCount)).replace("{decline}", String(declineCount));
-}
-
-function countStockTrends(stocks: Array<{ code: string; changePct: number }>, quotes: QuoteMap): BoardTrendStats {
-  let advanceCount = 0;
-  let flatCount = 0;
-  let declineCount = 0;
-
-  for (const stock of stocks) {
-    const changePct = quotes[stock.code]?.changePct ?? stock.changePct;
-
-    if (changePct > flatThreshold) {
-      advanceCount += 1;
-    } else if (changePct < -flatThreshold) {
-      declineCount += 1;
-    } else {
-      flatCount += 1;
-    }
-  }
-
-  return { advanceCount, flatCount, declineCount };
-}
-
-function formatCount(value: number, locale: Locale) {
-  return new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-US").format(value);
-}
-
-function formatTurnoverAmount(value: number, locale: Locale) {
-  if (!Number.isFinite(value) || value <= 0) {
-    return "--";
-  }
-
-  if (locale === "zh") {
-    const withUnit = (divisor: number, unit: string) => {
-      const scaled = value / divisor;
-      const digits = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
-      return `${trimTrailingZeros(scaled.toFixed(digits))} ${unit}`;
-    };
-
-    if (value >= 1_0000_0000_0000) {
-      return withUnit(1_0000_0000_0000, "万亿");
-    }
-
-    if (value >= 1_0000_0000) {
-      return withUnit(1_0000_0000, "亿");
-    }
-
-    if (value >= 1_0000) {
-      return withUnit(1_0000, "万");
-    }
-
-    return trimTrailingZeros(value.toFixed(0));
-  }
-
-  return new Intl.NumberFormat("en-US", {
-    notation: "compact",
-    maximumFractionDigits: value >= 1_000_000_000_000 ? 1 : 2,
-  }).format(value);
-}
-
-function getTurnoverTrend(delta: number) {
-  if (delta > 0) {
-    return "up";
-  }
-
-  if (delta < 0) {
-    return "down";
-  }
-
-  return "flat";
-}
-
-function getLiveTurnoverAmount(code: string, fallback: number, quotes: QuoteMap) {
-  if (code in quotes) {
-    const live = quotes[code].turnoverAmount;
-    return Number.isFinite(live) && live >= 0 ? live : fallback;
-  }
-
-  return fallback;
-}
-
-function filterTreemapByStockPredicate(
-  data: TreemapResponse,
-  quotes: QuoteMap,
-  predicate: (changePct: number) => boolean
-): TreemapResponse {
-  const filteredNodes = data.nodes
-    .map((node) => {
-      const filteredChildren = node.children.filter((stock) => {
-        const changePct = quotes[stock.code]?.changePct ?? stock.changePct;
-        return predicate(changePct);
-      });
-
-      return {
-        ...node,
-        children: filteredChildren,
-        stockCount: filteredChildren.length,
-        value: filteredChildren.reduce((sum, stock) => sum + stock.value, 0),
-      };
-    })
-    .filter((node) => node.children.length > 0);
-
-  let advanceCount = 0;
-  let flatCount = 0;
-  let declineCount = 0;
-  let turnoverAmount = 0;
-  let totalStockCount = 0;
-
-  for (const node of filteredNodes) {
-    for (const stock of node.children) {
-      const changePct = quotes[stock.code]?.changePct ?? stock.changePct;
-
-      if (changePct > flatThreshold) {
-        advanceCount += 1;
-      } else if (changePct < -flatThreshold) {
-        declineCount += 1;
-      } else {
-        flatCount += 1;
-      }
-
-      turnoverAmount += getLiveTurnoverAmount(stock.code, stock.turnoverAmount, quotes);
-      totalStockCount += 1;
-    }
-  }
-
-  return {
-    ...data,
-    stockCount: totalStockCount,
-    boardCount: filteredNodes.length,
-    summary: {
-      ...data.summary,
-      advanceCount,
-      flatCount,
-      declineCount,
-      turnoverAmount,
-      turnoverPreviousAmount: 0,
-      turnoverDelta: 0,
-    },
-    nodes: filteredNodes,
-  };
-}
-
-function normalizeSizeValue(value: number) {
-  return Number.isFinite(value) && value > 0 ? value : 1;
-}
-
-function getStockSizeValue(
-  stock: { code: string; value: number; turnoverAmount: number; turnoverRate: number },
-  quotes: QuoteMap,
-  sizeMode: HeatmapSizeMode
-) {
-  if (sizeMode === "amount") {
-    return normalizeSizeValue(getLiveTurnoverAmount(stock.code, stock.turnoverAmount, quotes));
-  }
-
-  if (sizeMode === "turnoverRate") {
-    // 换手率缺失（内置兜底快照无 f8）时回退流通市值权重，避免出现零面积块
-    return Number.isFinite(stock.turnoverRate) && stock.turnoverRate > 0
-      ? stock.turnoverRate
-      : stock.value;
-  }
-
-  return stock.value;
-}
-
-function applySizeModeToTreemapData(
-  data: TreemapResponse,
-  quotes: QuoteMap,
-  sizeMode: HeatmapSizeMode
-): TreemapResponse {
-  if (sizeMode === "marketCap") {
-    return data;
-  }
-
-  const nodes = data.nodes
-    .map((board) => {
-      const children = board.children
-        .map((stock) => ({
-          ...stock,
-          value: getStockSizeValue(stock, quotes, sizeMode),
-        }))
-        .sort((left, right) => right.value - left.value);
-      const total = children.reduce((sum, stock) => sum + stock.value, 0);
-
-      return {
-        ...board,
-        children,
-        value: total,
-        stockCount: children.length,
-      };
-    })
-    .sort((left, right) => right.value - left.value);
-
-  return {
-    ...data,
-    nodes,
-  };
-}
-
-function canvasToBlob(canvas: HTMLCanvasElement) {
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) {
-        resolve(blob);
-        return;
-      }
-
-      reject(new Error("Failed to export canvas"));
-    }, "image/png");
-  });
-}
-
-type ShareLogoRaster =
-  | { kind: "bitmap"; bitmap: ImageBitmap }
-  | { kind: "image"; image: HTMLImageElement };
-
-/**
- * SVG via `new Image().src = "/x.svg"` often fails to paint on canvas in WebKit
- * (`naturalWidth` 0 or empty draw). Fetch + Blob + createImageBitmap / decode() is reliable.
- */
-async function loadShareLogoRaster(): Promise<ShareLogoRaster> {
-  const response = await fetch("/logo-share.svg", { cache: "force-cache" });
-  if (!response.ok) {
-    throw new Error(`Logo fetch failed: ${response.status}`);
-  }
-
-  const blob = await response.blob();
-
-  if (typeof createImageBitmap !== "undefined") {
-    try {
-      const bitmap = await createImageBitmap(blob);
-      if (bitmap.width > 0 && bitmap.height > 0) {
-        return { kind: "bitmap", bitmap };
-      }
-      bitmap.close();
-    } catch {
-      /* fall through to HTMLImageElement */
-    }
-  }
-
-  const objectUrl = URL.createObjectURL(blob);
-  const image = new Image();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error("Logo <img> load failed"));
-      image.src = objectUrl;
-    });
-    await image.decode();
-    if (image.naturalWidth === 0 || image.naturalHeight === 0) {
-      throw new Error("Logo has zero dimensions");
-    }
-    return { kind: "image", image };
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-}
-
-function drawShareLogoRaster(
-  context: CanvasRenderingContext2D,
-  raster: ShareLogoRaster,
-  x: number,
-  y: number,
-  width: number,
-  height: number
-) {
-  if (raster.kind === "bitmap") {
-    context.drawImage(raster.bitmap, x, y, width, height);
-    raster.bitmap.close();
-    return;
-  }
-
-  context.drawImage(raster.image, x, y, width, height);
-}
-
-function toXueqiuSymbol(code: string) {
-  const [symbol, market] = code.split(".");
-  return `${market}${symbol}`;
-}
-
-function parseStockCode(code: string) {
-  const [symbol = "", market = "SH"] = code.split(".");
-  return {
-    symbol,
-    market: market.toUpperCase(),
-  };
-}
-
-function getSparklineUrl(code: string) {
-  const { symbol, market } = parseStockCode(code);
-  const marketId = market === "SH" ? "1" : "0";
-  // RJY 带横/竖虚线网格；线色已按 A 股涨红跌绿绘制。
-  return `https://webquotepic.eastmoney.com/GetPic.aspx?nid=${marketId}.${symbol}&imageType=RJY`;
-}
-
-function InspectorHeaderSparkline({
-  code,
-  changePct,
-  priceColorMode,
-  className,
-}: {
-  code: string;
-  changePct: number;
-  priceColorMode: PriceColorMode;
-  className?: string;
-}) {
-  const isFlat = Math.abs(changePct) < 0.1;
-  // 原图已是涨红跌绿；仅在「绿涨红跌」模式下交换 R/G，灰网格几乎不变。
-  const shouldSwapRg = !isFlat && priceColorMode === "green-rise";
-
-  return (
-    <span className={cn("relative flex min-w-0 items-center justify-center", className)}>
-      {shouldSwapRg && (
-        <svg aria-hidden className="pointer-events-none absolute h-0 w-0 overflow-hidden">
-          <filter id="sparkline-rg-swap" colorInterpolationFilters="sRGB">
-            <feColorMatrix
-              type="matrix"
-              values="0 1 0 0 0
-                      1 0 0 0 0
-                      0 0 1 0 0
-                      0 0 0 1 0"
-            />
-          </filter>
-        </svg>
-      )}
-      <img
-        src={getSparklineUrl(code)}
-        alt=""
-        className="h-full w-auto max-w-full object-contain"
-        style={{
-          // screen 消掉黑底，保留白/灰虚线与原有线色
-          mixBlendMode: "screen",
-          filter: isFlat
-            ? "brightness(1.15) grayscale(0.55)"
-            : shouldSwapRg
-              ? "url(#sparkline-rg-swap) brightness(1.12)"
-              : "brightness(1.12)",
-          imageRendering: "pixelated",
-        }}
-        loading="lazy"
-        decoding="async"
-        referrerPolicy="no-referrer"
-      />
-    </span>
-  );
-}
-
-function getDailyKlineUrl(code: string) {
-  const { symbol, market } = parseStockCode(code);
-  const marketPrefix = market === "SH" ? "sh" : market === "SZ" ? "sz" : "bj";
-  return `https://image.sinajs.cn/newchart/daily/n/${marketPrefix}${symbol}.gif`;
-}
-
-function getInspectorSortLabel(messages: HeatmapMessages, sortKey: InspectorSortKey) {
-  if (sortKey === "changeAbs") return messages.inspectorSortChangeAbs;
-  if (sortKey === "changeDesc") return messages.inspectorSortChangeDesc;
-  if (sortKey === "changeAsc") return messages.inspectorSortChangeAsc;
-  if (sortKey === "turnover") return messages.inspectorSortTurnover;
-  return messages.inspectorSortName;
-}
-
-function compareInspectorStocks(left: InspectorStockItem, right: InspectorStockItem, sortKey: InspectorSortKey) {
-  if (sortKey === "changeDesc") {
-    return right.changePct - left.changePct;
-  }
-
-  if (sortKey === "changeAsc") {
-    return left.changePct - right.changePct;
-  }
-
-  if (sortKey === "turnover") {
-    return right.turnoverAmount - left.turnoverAmount;
-  }
-
-  if (sortKey === "name") {
-    return left.name.localeCompare(right.name, "zh");
-  }
-
-  return Math.abs(right.changePct) - Math.abs(left.changePct);
-}
-
-function cycleInspectorSortKey(current: InspectorSortKey, direction: 1 | -1): InspectorSortKey {
-  const index = inspectorSortKeys.indexOf(current);
-  const nextIndex = (index + direction + inspectorSortKeys.length) % inspectorSortKeys.length;
-  return inspectorSortKeys[nextIndex];
-}
-
-function InspectorSortControls({
-  sortKey,
-  messages,
-  tone = "light",
-  showShortcutHint = false,
-  watchlistHint,
-  onChange,
-}: {
-  sortKey: InspectorSortKey;
-  messages: HeatmapMessages;
-  tone?: "light" | "dark";
-  showShortcutHint?: boolean;
-  watchlistHint?: string;
-  onChange: (next: InspectorSortKey) => void;
-}) {
-  const isDark = tone === "dark";
-
-  return (
-    <div className="flex min-w-0 items-center gap-1.5">
-      <span
-        className={cn(
-          "shrink-0 text-[10px] font-medium tracking-[0.06em]",
-          isDark ? "text-slate-400" : "text-slate-500"
-        )}
-      >
-        {messages.inspectorSortLabel}
-      </span>
-      <div className="flex min-w-0 flex-wrap items-center gap-1">
-        {inspectorSortKeys.map((key) => {
-          const active = sortKey === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => onChange(key)}
-              aria-pressed={active}
-              className={cn(
-                "rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
-                active
-                  ? isDark
-                    ? "bg-slate-100 text-slate-900"
-                    : "bg-slate-800 text-white"
-                  : isDark
-                    ? "bg-slate-800/80 text-slate-300 hover:bg-slate-700/80"
-                    : "bg-white text-slate-600 hover:bg-slate-200/80"
-              )}
-            >
-              {getInspectorSortLabel(messages, key)}
-            </button>
-          );
-        })}
-      </div>
-      {showShortcutHint && (
-        <span
-          className={cn(
-            "ml-auto shrink-0 truncate text-[10px]",
-            isDark ? "text-slate-500" : "text-slate-400"
-          )}
-        >
-          {[watchlistHint, messages.inspectorSortHint].filter(Boolean).join(" · ")}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function formatShareTimestamp(value: string) {
-  if (!value) {
-    return "--";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(date);
-}
-
-function getShortcutActionLabel(messages: HeatmapMessages, action: ShortcutActionId) {
-  if (action === "share") return messages.shortcutActionShare;
-  if (action === "resetView") return messages.shortcutActionResetView;
-  if (action === "fullscreen") return messages.shortcutActionFullscreen;
-  if (action === "settings") return messages.shortcutActionSettings;
-  if (action === "sidebar") return messages.shortcutActionSidebar;
-  if (action === "filters") return messages.shortcutActionFilters;
-  if (action === "toggleWatchlist") return messages.shortcutActionToggleWatchlist;
-  return messages.shortcutActionDisplayMode;
-}
-
-function withShortcutTitle(label: string, key: string) {
-  return `${label} (${formatShortcutLabel(key)})`;
-}
-
-function getMarketLabel(messages: HeatmapMessages, market: HeatmapUniverse) {
-  if (market === watchlistUniverseKey) return messages.markets.watchlist;
-  if (market === "all") return messages.markets.all;
-  if (market === "sse") return messages.markets.sse;
-  if (market === "szse") return messages.markets.szse;
-  if (market === "hs300") return messages.markets.hs300;
-  if (market === "zza50") return messages.markets.zza50;
-  if (market === "zza500") return messages.markets.zza500;
-  if (market === "main") return messages.markets.main;
-  if (market === "cyb") return messages.markets.cyb;
-  return messages.markets.kcb;
-}
-
-function getCompactMarketLabel(messages: HeatmapMessages, market: HeatmapUniverse, locale: Locale) {
-  if (locale === "en") {
-    if (market === watchlistUniverseKey) return "Watchlist";
-    if (market === "all") return "A-Share";
-    if (market === "sse") return "Shanghai";
-    if (market === "szse") return "Shenzhen";
-    if (market === "hs300") return "CSI 300";
-    if (market === "zza50") return "CSI A50";
-    if (market === "zza500") return "CSI A500";
-    if (market === "main") return "Main Board";
-    if (market === "cyb") return "ChiNext";
-    return "STAR";
-  }
-
-  return getMarketLabel(messages, market);
-}
-
-function getPeriodLabel(messages: HeatmapMessages, period: HeatmapPeriodKey) {
-  if (period === "day") return messages.metrics.day;
-  if (period === "week") return messages.metrics.week;
-  if (period === "month") return messages.metrics.month;
-  return messages.metrics.year;
-}
-
-function getCompactPeriodLabel(period: HeatmapPeriodKey, locale: Locale) {
-  if (locale === "en") {
-    if (period === "day") return "1D";
-    if (period === "week") return "1W";
-    if (period === "month") return "1M";
-    return "YTD";
-  }
-
-  if (period === "day") return "日";
-  if (period === "week") return "周";
-  if (period === "month") return "月";
-  return "年";
-}
-
-function getHeatColor(
-  theme: HeatTheme,
-  changePct: number,
-  colorMode: PriceColorMode,
-  displayMode: DisplayMode = "dark"
-) {
-  return heatColorFromTheme(theme, changePct, colorMode === "red-rise", displayMode);
-}
-
-function getLegendGradient(theme: HeatTheme, colorMode: PriceColorMode, displayMode: DisplayMode = "dark") {
-  return legendGradientFromTheme(theme, colorMode === "red-rise", displayMode, colorLegendSteps);
-}
-
-function getBoardHeaderColor(
-  theme: HeatTheme,
-  changePct: number,
-  colorMode: PriceColorMode,
-  displayMode: DisplayMode = "dark"
-) {
-  return boardHeaderColorFromTheme(theme, changePct, colorMode === "red-rise", displayMode);
-}
-
-function getChangeTextColor(
-  theme: HeatTheme,
-  changePct: number,
-  colorMode: PriceColorMode,
-  displayMode: DisplayMode,
-  tone: "normal" | "soft" | "strong" = "normal"
-) {
-  return uiChangeTextColor(theme, changePct, colorMode === "red-rise", displayMode, tone);
-}
-
-function getRiseTextColor(theme: HeatTheme, colorMode: PriceColorMode, displayMode: DisplayMode) {
-  return uiPolarityColor(theme, "rise", colorMode === "red-rise", displayMode, "normal");
-}
-
-function getFallTextColor(theme: HeatTheme, colorMode: PriceColorMode, displayMode: DisplayMode) {
-  return uiPolarityColor(theme, "fall", colorMode === "red-rise", displayMode, "normal");
-}
-
-function weightedAverageChange(
-  stocks: Array<{ code: string; value: number; changePct: number }>,
-  quotes: QuoteMap
-) {
-  let weightedSum = 0;
-  let totalValue = 0;
-
-  for (const stock of stocks) {
-    const changePct = quotes[stock.code]?.changePct ?? stock.changePct;
-    weightedSum += changePct * stock.value;
-    totalValue += stock.value;
-  }
-
-  if (totalValue <= 0) {
-    return 0;
-  }
-
-  return weightedSum / totalValue;
-}
-
-function sectorStatsKey(boardName: string, subBoardName: string) {
-  return `${boardName}\u0000${subBoardName}`;
-}
-
-function buildSectorVisualStats(
-  data: TreemapResponse | null,
-  quotes: QuoteMap
-): {
-  boards: Map<string, SectorVisualStats>;
-  subBoards: Map<string, SectorVisualStats>;
-} {
-  const boards = new Map<string, SectorVisualStats>();
-  const subBoards = new Map<string, SectorVisualStats>();
-
-  if (!data) {
-    return { boards, subBoards };
-  }
-
-  for (const board of data.nodes) {
-    boards.set(board.name, {
-      changePct: weightedAverageChange(board.children, quotes),
-      ...countStockTrends(board.children, quotes),
-    });
-
-    const stocksBySubBoard = new Map<string, typeof board.children>();
-    for (const stock of board.children) {
-      const subBoardName = stock.subBoardName || stock.boardName;
-      const stocks = stocksBySubBoard.get(subBoardName) ?? [];
-      stocks.push(stock);
-      stocksBySubBoard.set(subBoardName, stocks);
-    }
-
-    for (const [subBoardName, stocks] of stocksBySubBoard) {
-      subBoards.set(sectorStatsKey(board.name, subBoardName), {
-        changePct: weightedAverageChange(stocks, quotes),
-        ...countStockTrends(stocks, quotes),
-      });
-    }
-  }
-
-  return { boards, subBoards };
-}
-
-function groupStocksBySubBoard<
-  T extends {
-    code: string;
-    boardName: string;
-    subBoardName: string;
-    value: number;
-    changePct: number;
-  },
->(stocks: T[]) {
-  const subBoardMap = new Map<string, T[]>();
-
-  for (const stock of stocks) {
-    const key = stock.subBoardName || stock.boardName;
-    const current = subBoardMap.get(key) ?? [];
-    current.push(stock);
-    subBoardMap.set(key, current);
-  }
-
-  return Array.from(subBoardMap.entries())
-    .map(([name, children]) => ({
-      name,
-      boardName: children[0]?.boardName ?? "",
-      stockCount: children.length,
-      value: children.reduce((sum, child) => sum + child.value, 0),
-      changePct: weightedAverageChange(children, emptyQuoteMap),
-      children: [...children].sort((left, right) => right.value - left.value),
-    }))
-    .sort((left, right) => right.value - left.value);
-}
-
-function sortTreemapItems<T>(items: TreemapInput<T>[]) {
-  return [...items]
-    .filter((entry) => entry.value > 0)
-    .sort((left, right) => right.value - left.value);
-}
-
-function totalTreemapValue<T>(items: TreemapInput<T>[]) {
-  let total = 0;
-  for (const entry of items) {
-    total += entry.value;
-  }
-  return total;
-}
-
-function findBalancedSplitIndex<T>(items: TreemapInput<T>[]) {
-  if (items.length <= 1) {
-    return items.length;
-  }
-
-  const target = totalTreemapValue(items) / 2;
-  let cumulative = 0;
-  let bestIndex = 1;
-  let bestDiff = Number.POSITIVE_INFINITY;
-
-  for (let index = 1; index < items.length; index += 1) {
-    cumulative += items[index - 1].value;
-    const diff = Math.abs(target - cumulative);
-
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      bestIndex = index;
-    }
-  }
-
-  return bestIndex;
-}
-
-function splitBounds(bounds: Bounds, ratio: number) {
-  const splitVertically = bounds.width >= bounds.height;
-
-  if (splitVertically) {
-    const leftWidth = bounds.width * ratio;
-    return {
-      first: { x: bounds.x, y: bounds.y, width: leftWidth, height: bounds.height },
-      second: {
-        x: bounds.x + leftWidth,
-        y: bounds.y,
-        width: Math.max(0, bounds.width - leftWidth),
-        height: bounds.height,
-      },
-    };
-  }
-
-  const topHeight = bounds.height * ratio;
-  return {
-    first: { x: bounds.x, y: bounds.y, width: bounds.width, height: topHeight },
-    second: {
-      x: bounds.x,
-      y: bounds.y + topHeight,
-      width: bounds.width,
-      height: Math.max(0, bounds.height - topHeight),
-    },
-  };
-}
-
-function insetRect<T>(rect: TreemapRect<T>, gap: number) {
-  const inset = gap / 2;
-
-  return {
-    ...rect,
-    x: rect.x + inset,
-    y: rect.y + inset,
-    width: Math.max(0, rect.width - gap),
-    height: Math.max(0, rect.height - gap),
-  };
-}
-
-function binaryTreemap<T>(items: TreemapInput<T>[], x: number, y: number, width: number, height: number, gap = 0) {
-  const sortedItems = sortTreemapItems(items);
-
-  function layout(entries: TreemapInput<T>[], bounds: Bounds): TreemapRect<T>[] {
-    if (entries.length === 0 || bounds.width <= 1 || bounds.height <= 1) {
-      return [];
-    }
-
-    if (entries.length === 1) {
-      return [
-        insetRect(
-          {
-            item: entries[0].item,
-            x: bounds.x,
-            y: bounds.y,
-            width: bounds.width,
-            height: bounds.height,
-          },
-          gap
-        ),
-      ];
-    }
-
-    const splitIndex = findBalancedSplitIndex(entries);
-    const firstEntries = entries.slice(0, splitIndex);
-    const secondEntries = entries.slice(splitIndex);
-
-    if (firstEntries.length === 0 || secondEntries.length === 0) {
-      return entries.map((entry, index) =>
-        insetRect(
-          {
-            item: entry.item,
-            x: bounds.x,
-            y: bounds.y + (bounds.height / entries.length) * index,
-            width: bounds.width,
-            height: bounds.height / entries.length,
-          },
-          gap
-        )
-      );
-    }
-
-    const total = totalTreemapValue(entries);
-    const firstRatio = totalTreemapValue(firstEntries) / total;
-    const { first, second } = splitBounds(bounds, firstRatio);
-
-    return [...layout(firstEntries, first), ...layout(secondEntries, second)];
-  }
-
-  return layout(sortedItems, { x, y, width, height }).filter((rect) => rect.width > 1 && rect.height > 1);
-}
-
-function drawClippedText(
-  context: CanvasRenderingContext2D,
-  text: string,
-  textX: number,
-  textY: number,
-  clipX: number,
-  clipY: number,
-  clipWidth: number,
-  clipHeight: number
-) {
-  context.save();
-  context.beginPath();
-  context.rect(clipX, clipY, clipWidth, clipHeight);
-  context.clip();
-  context.fillText(text, textX, textY);
-  context.restore();
-}
-
-const heatmapFontStack = `"Avenir Next Condensed", "DIN Condensed", "PingFang SC", "Microsoft YaHei", Arial, sans-serif`;
-
-function heatmapFont(weight: number, size: number) {
-  return `${weight} ${size}px ${heatmapFontStack}`;
-}
-
-function fitTextToWidth(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
-  if (maxWidth <= 0 || text.length === 0) {
-    return "";
-  }
-
-  if (context.measureText(text).width <= maxWidth) {
-    return text;
-  }
-
-  let low = 1;
-  let high = text.length;
-  let best = "";
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const candidate = text.slice(0, mid);
-
-    if (context.measureText(candidate).width <= maxWidth) {
-      best = candidate;
-      low = mid + 1;
-    } else {
-      high = mid - 1;
-    }
-  }
-
-  if (best) {
-    return best;
-  }
-
-  const firstCharacter = text.slice(0, 1);
-  return context.measureText(firstCharacter).width <= maxWidth ? firstCharacter : "";
-}
-
-function fitFontSizeToWidth(
-  context: CanvasRenderingContext2D,
-  text: string,
-  weight: number,
-  preferredSize: number,
-  minSize: number,
-  maxWidth: number
-) {
-  if (maxWidth <= 0 || text.length === 0) {
-    return preferredSize;
-  }
-
-  context.font = heatmapFont(weight, preferredSize);
-  const preferredWidth = context.measureText(text).width;
-
-  if (preferredWidth <= maxWidth) {
-    return preferredSize;
-  }
-
-  return clamp((preferredSize * maxWidth) / preferredWidth, minSize, preferredSize);
-}
-
-type CanvasTextLine = {
-  text: string;
-  font: string;
-};
-
-function measureCanvasTextLine(
-  context: CanvasRenderingContext2D,
-  line: CanvasTextLine,
-  fallbackFontSize: number
-) {
-  context.font = line.font;
-  const metrics = context.measureText(line.text);
-  const measuredAscent = metrics.actualBoundingBoxAscent;
-  const measuredDescent = metrics.actualBoundingBoxDescent;
-
-  return {
-    ascent:
-      Number.isFinite(measuredAscent) && measuredAscent > 0
-        ? measuredAscent
-        : fallbackFontSize * 0.8,
-    descent:
-      Number.isFinite(measuredDescent) && measuredDescent >= 0
-        ? measuredDescent
-        : fallbackFontSize * 0.2,
-  };
-}
-
-function drawCenteredTextStack(
-  context: CanvasRenderingContext2D,
-  lines: Array<CanvasTextLine & { fallbackFontSize: number }>,
-  centerX: number,
-  centerY: number,
-  lineGap: number,
-  clipRect: { x: number; y: number; width: number; height: number }
-) {
-  const measuredLines = lines.map((line) => ({
-    ...line,
-    ...measureCanvasTextLine(context, line, line.fallbackFontSize),
-  }));
-  const totalHeight =
-    measuredLines.reduce((height, line) => height + line.ascent + line.descent, 0) +
-    lineGap * Math.max(0, measuredLines.length - 1);
-  let lineTop = centerY - totalHeight / 2;
-
-  context.textAlign = "center";
-  context.textBaseline = "alphabetic";
-
-  for (const line of measuredLines) {
-    context.font = line.font;
-    drawClippedText(
-      context,
-      line.text,
-      centerX,
-      lineTop + line.ascent,
-      clipRect.x,
-      clipRect.y,
-      clipRect.width,
-      clipRect.height
-    );
-    lineTop += line.ascent + line.descent + lineGap;
-  }
-}
-
-function drawSectorHeaderLabel(
-  context: CanvasRenderingContext2D,
-  rect: { x: number; y: number; width: number; titleHeight: number },
-  options: {
-    name: string;
-    changePct: number;
-    advanceCount: number;
-    declineCount: number;
-    messages: HeatmapMessages;
-    showDrillHint?: boolean;
-    compact?: boolean;
-    showStats?: boolean;
-  }
-) {
-  const { name, changePct, advanceCount, declineCount, messages } = options;
-  const compact = Boolean(options.compact);
-  const showDrillHint = Boolean(options.showDrillHint);
-  const showStats = Boolean(options.showStats);
-
-  if (rect.width <= 44 || rect.titleHeight <= 8) {
-    return;
-  }
-
-  const fontSize = compact
-    ? clamp(Math.floor(rect.titleHeight * 0.56), 9, 12)
-    : clamp(Math.floor(rect.titleHeight * 0.52), 10, 15);
-  const statsFontSize = compact
-    ? clamp(Math.floor(rect.titleHeight * 0.48), 8, 11)
-    : clamp(Math.floor(rect.titleHeight * 0.46), 9, 13);
-  const leftPad = compact ? 5 : 8;
-  const rightPad = showDrillHint ? 18 : compact ? 5 : 8;
-  const available = Math.max(0, rect.width - leftPad - rightPad);
-  const centerY = rect.y + rect.titleHeight / 2 + fontSize * (compact ? 0.06 : 0.08);
-  const clipX = rect.x + (compact ? 3 : 4);
-  const clipY = rect.y + (compact ? 1 : 2);
-  const clipWidth = Math.max(0, rect.width - (compact ? 6 : 8));
-  const clipHeight = Math.max(0, rect.titleHeight - (compact ? 2 : 4));
-  const trendText = formatBoardTrendCounts(messages, advanceCount, declineCount);
-  const changeText = compact && rect.width < 132 ? formatCompactChange(changePct) : formatChange(changePct);
-
-  context.textBaseline = "middle";
-  context.font = heatmapFont(650, statsFontSize);
-  const trendWidth = context.measureText(trendText).width;
-  const changeWidth = context.measureText(changeText).width;
-  const statsGap = compact ? 5 : 7;
-  const canShowTrend =
-    showStats && available > (compact ? 108 : 148) && trendWidth + changeWidth + statsGap < available * 0.64;
-  const canShowChange = showStats && available > (compact ? 72 : 96);
-  const statsWidth = canShowChange ? changeWidth + (canShowTrend ? trendWidth + statsGap : 0) : 0;
-  const nameMaxWidth = Math.max(0, available - (statsWidth > 0 ? statsWidth + (compact ? 6 : 8) : 0));
-
-  context.fillStyle = "rgba(247, 250, 252, 0.96)";
-  context.textAlign = "left";
-  context.font = heatmapFont(700, fontSize);
-  const fittedName = fitTextToWidth(context, name, nameMaxWidth);
-  if (fittedName) {
-    drawClippedText(context, fittedName, rect.x + leftPad, centerY, clipX, clipY, clipWidth, clipHeight);
-  }
-
-  if (!canShowChange) {
-    return;
-  }
-
-  context.font = heatmapFont(650, statsFontSize);
-  context.textAlign = "right";
-  const statsRight = rect.x + rect.width - rightPad;
-  drawClippedText(context, changeText, statsRight, centerY, clipX, clipY, clipWidth, clipHeight);
-
-  if (canShowTrend) {
-    context.fillStyle = "rgba(247, 250, 252, 0.86)";
-    drawClippedText(
-      context,
-      trendText,
-      statsRight - changeWidth - statsGap,
-      centerY,
-      clipX,
-      clipY,
-      clipWidth,
-      clipHeight
-    );
-  }
-}
-
-function drawSectorThumbnailLabel(
-  context: CanvasRenderingContext2D,
-  rect: SubBoardRect,
-  messages: HeatmapMessages,
-  zoomScale = 1
-) {
-  const displayWidth = rect.width * zoomScale;
-  const displayHeight = rect.height * zoomScale;
-  const screenUnit = 1 / zoomScale;
-  const clipPaddingPx = displayWidth > 110 ? 6 : displayWidth > 54 ? 4 : 3;
-  const textInsetXPx = displayWidth > 110 ? 8 : displayWidth > 54 ? 5 : 4;
-  const textInsetYPx = displayHeight > 64 ? 7 : displayHeight > 36 ? 5 : 3;
-  const clipPadding = clipPaddingPx * screenUnit;
-  const textInsetX = textInsetXPx * screenUnit;
-  const textInsetY = textInsetYPx * screenUnit;
-  const clipWidth = Math.max(0, rect.width - clipPadding * 2);
-  const clipHeight = Math.max(0, rect.height - clipPadding * 2);
-
-  if (displayWidth < 18 || displayHeight < 12 || clipWidth <= 2 || clipHeight <= 2) {
-    return;
-  }
-
-  const trendText = formatBoardTrendCounts(messages, rect.advanceCount, rect.declineCount);
-  const changeText = displayWidth >= 72 ? formatChange(rect.changePct) : formatCompactChange(rect.changePct);
-  const hasLargeLabel = displayWidth >= 96 && displayHeight >= 64;
-  const hasStackedLabel = displayWidth >= 44 && displayHeight >= 36;
-
-  context.save();
-  try {
-    context.fillStyle = "rgba(247, 250, 252, 0.96)";
-    context.shadowColor = "rgba(0, 0, 0, 0.42)";
-    context.shadowBlur = (displayHeight < 20 ? 0.5 : 1.3) * screenUnit;
-    context.shadowOffsetY = 0.6 * screenUnit;
-
-    if (hasLargeLabel) {
-      const preferredTitleSize =
-        clamp(Math.floor(Math.min(displayWidth, displayHeight) * 0.2), 13, 26) * screenUnit;
-      const titleSize = fitFontSizeToWidth(
-        context,
-        rect.name,
-        700,
-        preferredTitleSize,
-        Math.max(11 * screenUnit, preferredTitleSize * 0.66),
-        clipWidth
-      );
-      const detailSize = Math.min(
-        clamp(Math.floor(Math.min(displayWidth, displayHeight) * 0.16), 11, 22) * screenUnit,
-        titleSize * 1.05
-      );
-      const trendSize = Math.max(10 * screenUnit, detailSize * 0.78);
-      const centerX = rect.x + rect.width / 2;
-      const centerY = rect.y + rect.height / 2;
-
-      context.textAlign = "center";
-      context.textBaseline = "middle";
-      context.font = heatmapFont(700, titleSize);
-      drawClippedText(
-        context,
-        fitTextToWidth(context, rect.name, clipWidth),
-        centerX,
-        centerY - detailSize * 0.95,
-        rect.x + clipPadding,
-        rect.y + clipPadding,
-        clipWidth,
-        clipHeight
-      );
-
-      context.font = heatmapFont(700, detailSize);
-      drawClippedText(
-        context,
-        changeText,
-        centerX,
-        centerY + detailSize * 0.18,
-        rect.x + clipPadding,
-        rect.y + clipPadding,
-        clipWidth,
-        clipHeight
-      );
-
-      if (displayHeight >= 78) {
-        context.fillStyle = "rgba(247, 250, 252, 0.88)";
-        context.font = heatmapFont(600, trendSize);
-        drawClippedText(
-          context,
-          trendText,
-          centerX,
-          centerY + detailSize * 1.18,
-          rect.x + clipPadding,
-          rect.y + clipPadding,
-          clipWidth,
-          clipHeight
-        );
-      }
-      return;
-    }
-
-    if (hasStackedLabel) {
-      const preferredTitleSize =
-        clamp(Math.floor(Math.min(displayWidth * 0.2, displayHeight * 0.28)), 8, 16) * screenUnit;
-      const titleSize = fitFontSizeToWidth(
-        context,
-        rect.name,
-        700,
-        preferredTitleSize,
-        Math.max(7 * screenUnit, preferredTitleSize * 0.72),
-        clipWidth - (textInsetX - clipPadding)
-      );
-      const detailSize = Math.min(
-        clamp(Math.floor(displayHeight * 0.22), 8, 14) * screenUnit,
-        titleSize * 1.08
-      );
-      const trendSize = Math.max(7 * screenUnit, detailSize * 0.86);
-
-      context.textAlign = "left";
-      context.textBaseline = "alphabetic";
-      context.font = heatmapFont(700, titleSize);
-      drawClippedText(
-        context,
-        fitTextToWidth(context, rect.name, clipWidth - (textInsetX - clipPadding)),
-        rect.x + textInsetX,
-        rect.y + textInsetY + titleSize,
-        rect.x + clipPadding,
-        rect.y + clipPadding,
-        clipWidth,
-        clipHeight
-      );
-
-      context.font = heatmapFont(700, detailSize);
-      drawClippedText(
-        context,
-        changeText,
-        rect.x + textInsetX,
-        rect.y + textInsetY + titleSize + detailSize + 1.5 * screenUnit,
-        rect.x + clipPadding,
-        rect.y + clipPadding,
-        clipWidth,
-        clipHeight
-      );
-
-      if (displayHeight >= 52 && displayWidth >= 64) {
-        context.fillStyle = "rgba(247, 250, 252, 0.88)";
-        context.font = heatmapFont(600, trendSize);
-        drawClippedText(
-          context,
-          trendText,
-          rect.x + textInsetX,
-          rect.y + textInsetY + titleSize + detailSize + trendSize + 4.5 * screenUnit,
-          rect.x + clipPadding,
-          rect.y + clipPadding,
-          clipWidth,
-          clipHeight
-        );
-      }
-      return;
-    }
-
-    const fontSize = clamp(Math.floor(Math.min(displayWidth * 0.2, displayHeight * 0.58)), 7, 12) * screenUnit;
-    context.textAlign = "left";
-    context.textBaseline = "middle";
-    context.font = heatmapFont(700, fontSize);
-    const canShowChange = displayWidth >= 40 && displayHeight >= 16;
-    const fittedName = fitTextToWidth(
-      context,
-      canShowChange ? rect.name : changeText,
-      clipWidth - (textInsetX - clipPadding)
-    );
-    if (fittedName) {
-      drawClippedText(
-        context,
-        fittedName,
-        rect.x + textInsetX,
-        rect.y + rect.height / 2 + fontSize * 0.06,
-        rect.x + clipPadding,
-        rect.y + clipPadding,
-        clipWidth,
-        clipHeight
-      );
-    }
-  } finally {
-    context.restore();
-  }
-}
-
-function drawStockLabel(
-  context: CanvasRenderingContext2D,
-  stock: StockRect,
-  zoomScale = 1,
-  highlighted = false,
-  quote?: QuoteMap[string]
-) {
-  const price = quote?.price ?? stock.price;
-  const changePct = quote?.changePct ?? stock.changePct;
-  const displayWidth = stock.width * zoomScale;
-  const displayHeight = stock.height * zoomScale;
-  const screenUnit = 1 / zoomScale;
-  const clipPaddingPx = displayWidth > 110 ? 5 : displayWidth > 54 ? 3 : 2;
-  const textInsetXPx = displayWidth > 110 ? 6 : displayWidth > 54 ? 4 : 3;
-  const textInsetYPx = displayHeight > 56 ? 4.5 : displayHeight > 26 ? 3 : 2;
-  const clipPadding = clipPaddingPx * screenUnit;
-  const textInsetX = textInsetXPx * screenUnit;
-  const textInsetY = textInsetYPx * screenUnit;
-  const clipWidth = Math.max(0, stock.width - clipPadding * 2);
-  const clipHeight = Math.max(0, stock.height - clipPadding * 2);
-
-  if (displayWidth < 16 || displayHeight < 8 || clipWidth <= 2 || clipHeight <= 2) {
-    return;
-  }
-
-  const hasLargeLabel = displayWidth >= 108 && displayHeight >= 58;
-  const hasStackedLabel = displayWidth >= 28 && displayHeight >= 20;
-  const hasInlineLabel = displayWidth >= 24 && displayHeight >= 10;
-  const titleWeight = highlighted ? 800 : 700;
-  const detailWeight = highlighted ? 750 : 650;
-
-  context.save();
-  try {
-    context.fillStyle = "rgba(247, 250, 252, 0.96)";
-    context.shadowColor = "rgba(0, 0, 0, 0.42)";
-    context.shadowBlur = (displayHeight < 14 ? 0.45 : 1.2) * screenUnit;
-    context.shadowOffsetY = 0.6 * screenUnit;
-
-    if (hasLargeLabel) {
-      const preferredTitleSize =
-        clamp(Math.floor(Math.min(displayWidth, displayHeight) * 0.26), 15, 30) * screenUnit;
-      const titleSize = fitFontSizeToWidth(
-        context,
-        stock.name,
-        titleWeight,
-        preferredTitleSize,
-        Math.max(12 * screenUnit, preferredTitleSize * 0.66),
-        clipWidth
-      );
-      const detailSize = Math.min(
-        clamp(Math.floor(Math.min(displayWidth, displayHeight) * 0.19), 11, 23) * screenUnit,
-        titleSize * 1.08
-      );
-      const centerX = stock.x + stock.width / 2;
-      const centerY = stock.y + stock.height / 2;
-      const titleFont = heatmapFont(titleWeight, titleSize);
-      context.font = titleFont;
-      const lines: Array<CanvasTextLine & { fallbackFontSize: number }> = [
-        {
-          text: fitTextToWidth(context, stock.name, clipWidth),
-          font: titleFont,
-          fallbackFontSize: titleSize,
-        },
-        {
-          text: formatChange(changePct),
-          font: heatmapFont(detailWeight, detailSize),
-          fallbackFontSize: detailSize,
-        },
-      ];
-
-      if (displayWidth > 180 && displayHeight > 100) {
-        const priceSize = Math.max(11 * screenUnit, detailSize - 1 * screenUnit);
-        lines.push({
-          text: formatPrice(price),
-          font: heatmapFont(550, priceSize),
-          fallbackFontSize: priceSize,
-        });
-      }
-
-      drawCenteredTextStack(
-        context,
-        lines,
-        centerX,
-        centerY,
-        Math.max(3 * screenUnit, Math.min(titleSize, detailSize) * 0.12),
-        {
-          x: stock.x + clipPadding,
-          y: stock.y + clipPadding,
-          width: clipWidth,
-          height: clipHeight,
-        }
-      );
-      return;
-    }
-
-    if (hasStackedLabel) {
-      const preferredTitleSize =
-        clamp(Math.floor(Math.min(displayWidth * 0.19, displayHeight * 0.43)), 7.5, 16) * screenUnit;
-      const titleSize = fitFontSizeToWidth(
-        context,
-        stock.name,
-        titleWeight,
-        preferredTitleSize,
-        Math.max(6.5 * screenUnit, preferredTitleSize * 0.72),
-        clipWidth - (textInsetX - clipPadding)
-      );
-      const detailSize = Math.min(
-        clamp(Math.floor(displayHeight * 0.33), 7, 13) * screenUnit,
-        titleSize * 1.08
-      );
-
-      context.textAlign = "left";
-      context.textBaseline = "alphabetic";
-      context.font = heatmapFont(titleWeight, titleSize);
-      drawClippedText(
-        context,
-        fitTextToWidth(context, stock.name, clipWidth - (textInsetX - clipPadding)),
-        stock.x + textInsetX,
-        stock.y + textInsetY + titleSize,
-        stock.x + clipPadding,
-        stock.y + clipPadding,
-        clipWidth,
-        clipHeight
-      );
-
-      if (displayHeight >= 20) {
-        context.font = heatmapFont(detailWeight, detailSize);
-        drawClippedText(
-          context,
-          displayWidth >= 58 ? formatChange(changePct) : formatCompactChange(changePct),
-          stock.x + textInsetX,
-          stock.y + textInsetY + titleSize + detailSize + 1.5 * screenUnit,
-          stock.x + clipPadding,
-          stock.y + clipPadding,
-          clipWidth,
-          clipHeight
-        );
-      }
-      return;
-    }
-
-    if (hasInlineLabel) {
-      const fontSize =
-        clamp(Math.floor(Math.min(displayWidth * 0.18, displayHeight * 0.68)), 6.5, 11) * screenUnit;
-      const changeText = formatCompactChange(changePct);
-      const gap = 3 * screenUnit;
-
-      context.textAlign = "left";
-      context.textBaseline = "middle";
-      context.font = heatmapFont(detailWeight, fontSize);
-
-      const changeWidth = context.measureText(changeText).width;
-      const canShowChange = displayWidth >= 32 && changeWidth + gap < clipWidth * 0.72;
-      const nameMaxWidth = canShowChange ? Math.max(0, clipWidth - changeWidth - gap) : clipWidth;
-      const fittedName = fitTextToWidth(context, stock.name, nameMaxWidth);
-      const labelY = stock.y + stock.height / 2 + fontSize * 0.06;
-
-      if (fittedName) {
-        drawClippedText(
-          context,
-          fittedName,
-          stock.x + textInsetX,
-          labelY,
-          stock.x + clipPadding,
-          stock.y + clipPadding,
-          clipWidth,
-          clipHeight
-        );
-      }
-
-      if (canShowChange) {
-        context.textAlign = "right";
-        drawClippedText(
-          context,
-          changeText,
-          stock.x + stock.width - textInsetX,
-          labelY,
-          stock.x + clipPadding,
-          stock.y + clipPadding,
-          clipWidth,
-          clipHeight
-        );
-      }
-      return;
-    }
-
-    if (displayWidth >= 18 && displayHeight >= 8) {
-      const fontSize = clamp(Math.floor(displayHeight * 0.72), 6, 9) * screenUnit;
-
-      context.textAlign = "left";
-      context.textBaseline = "middle";
-      context.font = heatmapFont(detailWeight, fontSize);
-      const fittedName = fitTextToWidth(context, stock.name, clipWidth);
-
-      if (fittedName) {
-        drawClippedText(
-          context,
-          fittedName,
-          stock.x + textInsetX,
-          stock.y + stock.height / 2 + fontSize * 0.06,
-          stock.x + clipPadding,
-          stock.y + clipPadding,
-          clipWidth,
-          clipHeight
-        );
-      }
-    }
-  } finally {
-    context.restore();
-  }
-}
-
-function usePollWhileVisible(task: () => void | Promise<void>, intervalMs: number) {
-  useEffect(() => {
-    if (typeof document === "undefined") {
-      return;
-    }
-
-    let cancelled = false;
-    let timer: number | null = null;
-
-    const run = () => {
-      if (cancelled) return;
-      Promise.resolve(task()).catch(() => {
-        /* Errors are handled by the task itself. */
-      });
-    };
-
-    const start = () => {
-      if (timer !== null) return;
-      timer = window.setInterval(run, intervalMs);
-    };
-
-    const stop = () => {
-      if (timer !== null) {
-        window.clearInterval(timer);
-        timer = null;
-      }
-    };
-
-    const onVisibility = () => {
-      if (document.hidden) {
-        stop();
-      } else {
-        run();
-        start();
-      }
-    };
-
-    if (!document.hidden) {
-      run();
-      start();
-    }
-    document.addEventListener("visibilitychange", onVisibility);
-
-    return () => {
-      cancelled = true;
-      stop();
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [task, intervalMs]);
-}
-
-async function readQuoteStream(
-  response: Response,
-  onEvent: (event: QuoteStreamEvent) => void
-) {
-  if (!response.body) {
-    throw new Error("Streaming response body is unavailable");
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  const consumeLine = (line: string) => {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      return;
-    }
-    onEvent(JSON.parse(trimmed) as QuoteStreamEvent);
-  };
-
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      consumeLine(line);
-    }
-
-    if (done) {
-      break;
-    }
-  }
-
-  consumeLine(buffer);
-}
-
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return;
-    }
-
-    const query = window.matchMedia("(max-width: 767px)");
-    const update = () => setIsMobile(query.matches);
-
-    update();
-
-    if (typeof query.addEventListener === "function") {
-      query.addEventListener("change", update);
-      return () => query.removeEventListener("change", update);
-    }
-
-    query.addListener(update);
-    return () => query.removeListener(update);
-  }, []);
-
-  return isMobile;
-}
-
-type MobileStockSheetStock = {
-  code: string;
-  name: string;
-  subBoardName: string;
-  price: number;
-  changePct: number;
-  active?: boolean;
-};
-
-function MobileStockSheet({
-  title,
-  stock,
-  stocks,
-  sectorStats,
-  messages,
-  priceColorMode,
-  heatTheme,
-  displayMode,
-  sortKey,
-  isInWatchlist,
-  onSortChange,
-  onClose,
-  onSelectStock,
-  onToggleWatchlist,
-  onOpenXueqiu,
-}: {
-  title: string | null;
-  stock: MobileStockSheetStock | null;
-  stocks: MobileStockSheetStock[];
-  sectorStats: {
-    advanceCount: number;
-    declineCount: number;
-    changePct: number;
-  } | null;
-  messages: HeatmapMessages;
-  priceColorMode: PriceColorMode;
-  heatTheme: HeatTheme;
-  displayMode: DisplayMode;
-  sortKey: InspectorSortKey;
-  isInWatchlist: boolean;
-  onSortChange: (next: InspectorSortKey) => void;
-  onClose: () => void;
-  onSelectStock: (code: string) => void;
-  onToggleWatchlist: () => void;
-  onOpenXueqiu: (code: string) => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-[9998] flex flex-col justify-end" role="dialog" aria-modal="true">
-      <button
-        type="button"
-        aria-label={messages.closeSheet}
-        onClick={onClose}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-      />
-      <div className="relative flex max-h-[82vh] w-full flex-col rounded-t-2xl border-t border-slate-700/80 bg-[#0f1319] text-slate-100 shadow-[0_-20px_60px_rgba(0,0,0,0.5)]">
-        <div className="flex items-center justify-center pt-2">
-          <span className="h-1 w-10 rounded-full bg-slate-600/80" aria-hidden />
-        </div>
-
-        <div className="flex items-start justify-between gap-3 px-4 pt-2 pb-3">
-          <div className="min-w-0">
-            <p className="text-[12px] font-medium tracking-[0.04em] text-slate-400">{title ?? ""}</p>
-            {stock ? (
-              <>
-                <p className="mt-1 text-[18px] font-semibold leading-tight text-white [word-break:keep-all]">
-                  {stock.name}
-                </p>
-                <div className="mt-1 flex items-baseline gap-3 tabular-nums">
-                  <span className="text-[20px] font-semibold text-white">{formatPrice(stock.price)}</span>
-                  <span
-                    className="text-[15px] font-semibold"
-                    style={{
-                      color: getChangeTextColor(heatTheme, stock.changePct, priceColorMode, displayMode),
-                    }}
-                  >
-                    {formatChange(stock.changePct)}
-                  </span>
-                </div>
-              </>
-            ) : (
-              <p className="mt-1 text-[13px] text-slate-400">{messages.mobileTapHint}</p>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={messages.closeSheet}
-            className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-slate-700/80 bg-slate-800/60 text-slate-200 transition-colors hover:bg-slate-700/80"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-
-        {stock && (
-          <>
-            <div className="mx-4 mb-3 flex justify-center overflow-hidden rounded-md border border-slate-700/80 bg-white px-2 py-1">
-              <img
-                src={getDailyKlineUrl(stock.code)}
-                alt={`${stock.name} K-line`}
-                className="h-auto w-[88%] object-contain"
-                loading="lazy"
-                decoding="async"
-                referrerPolicy="no-referrer"
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-2 px-4 pb-3">
-              <button
-                type="button"
-                onClick={onToggleWatchlist}
-                className={cn(
-                  "inline-flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-2 text-[13px] font-medium transition-colors",
-                  isInWatchlist
-                    ? "border-amber-400/70 bg-amber-400/15 text-amber-200 hover:bg-amber-400/25"
-                    : "border-slate-600 bg-slate-800/70 text-slate-100 hover:bg-slate-700/80"
-                )}
-              >
-                <Star className="size-3.5" fill={isInWatchlist ? "currentColor" : "none"} />
-                {isInWatchlist ? messages.watchlistQuickRemove : messages.watchlistQuickAdd}
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpenXueqiu(stock.code)}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-md border border-slate-600 bg-slate-800/70 px-3 py-2 text-[13px] font-medium text-slate-100 transition-colors hover:bg-slate-700/80"
-              >
-                <ExternalLink className="size-3.5" />
-                {messages.mobileOpenInXueqiu}
-              </button>
-            </div>
-          </>
-        )}
-
-        {stocks.length > 0 && (
-          <div className="flex min-h-0 flex-1 flex-col border-t border-slate-700/80 bg-[#0b0e13]">
-            <div className="space-y-1 border-b border-slate-800/80 px-4 py-1.5">
-              <div className="flex items-center justify-between gap-2 text-[11px] font-medium tracking-[0.08em] text-slate-400">
-                <span className="min-w-0 truncate">{title ?? ""}</span>
-                {sectorStats ? (
-                  <div className="flex shrink-0 items-baseline gap-2 tabular-nums">
-                    <span className="font-semibold text-slate-300">
-                      {formatBoardTrendCounts(messages, sectorStats.advanceCount, sectorStats.declineCount)}
-                    </span>
-                    <span
-                      className="font-semibold"
-                      style={{
-                        color: getChangeTextColor(heatTheme, sectorStats.changePct, priceColorMode, displayMode),
-                      }}
-                    >
-                      {formatChange(sectorStats.changePct)}
-                    </span>
-                  </div>
-                ) : (
-                  <span className="tabular-nums">{stocks.length}</span>
-                )}
-              </div>
-              <InspectorSortControls
-                sortKey={sortKey}
-                messages={messages}
-                tone="dark"
-                onChange={onSortChange}
-              />
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
-              {stock && (
-                <div className="sticky top-0 z-10 flex w-full items-center gap-3 border-b border-b-slate-800/80 bg-[#1a212b] px-4 py-2.5 text-left text-[13px] shadow-[0_8px_16px_rgba(0,0,0,0.28)]">
-                  <span className="min-w-0 flex-1 truncate font-semibold text-white">{stock.name}</span>
-                  <img
-                    src={getSparklineUrl(stock.code)}
-                    alt=""
-                    className="h-5 w-[72px] shrink-0 object-contain opacity-90"
-                    loading="lazy"
-                    decoding="async"
-                    referrerPolicy="no-referrer"
-                  />
-                  <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-slate-300">
-                    {formatPrice(stock.price)}
-                  </span>
-                  <span
-                    className="w-16 shrink-0 text-right text-[12px] font-semibold tabular-nums"
-                    style={{
-                      color: getChangeTextColor(heatTheme, stock.changePct, priceColorMode, displayMode),
-                    }}
-                  >
-                    {formatChange(stock.changePct)}
-                  </span>
-                </div>
-              )}
-              {stocks
-                .filter((item) => item.code !== stock?.code)
-                .map((item) => (
-                  <button
-                    type="button"
-                    key={item.code}
-                    onClick={() => onSelectStock(item.code)}
-                    className="flex w-full items-center gap-3 border-b border-b-slate-800/80 px-4 py-2.5 text-left text-[13px] text-slate-200 transition-colors hover:bg-slate-800/40"
-                  >
-                    <span className="min-w-0 flex-1 truncate font-medium">{item.name}</span>
-                    <img
-                      src={getSparklineUrl(item.code)}
-                      alt=""
-                      className="h-5 w-[72px] shrink-0 object-contain opacity-90"
-                      loading="lazy"
-                      decoding="async"
-                      referrerPolicy="no-referrer"
-                    />
-                    <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-slate-300">
-                      {formatPrice(item.price)}
-                    </span>
-                    <span
-                      className="w-16 shrink-0 text-right text-[12px] font-semibold tabular-nums"
-                      style={{
-                        color: getChangeTextColor(heatTheme, item.changePct, priceColorMode, displayMode),
-                      }}
-                    >
-                      {formatChange(item.changePct)}
-                    </span>
-                  </button>
-                ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-const heatmapLoadingBlocks = [
-  {
-    className: "col-span-4 row-span-3",
-    darkTone: "bg-emerald-500/[0.22]",
-    lightTone: "bg-emerald-100/85",
-    delay: "0ms",
-  },
-  {
-    className: "col-span-2 row-span-2 col-start-5",
-    darkTone: "bg-red-500/[0.2]",
-    lightTone: "bg-red-100/85",
-    delay: "120ms",
-  },
-  {
-    className: "col-span-2 row-start-3 col-start-5",
-    darkTone: "bg-slate-500/[0.18]",
-    lightTone: "bg-slate-200/85",
-    delay: "240ms",
-  },
-  {
-    className: "col-span-2 row-start-4",
-    darkTone: "bg-red-500/[0.16]",
-    lightTone: "bg-red-100/75",
-    delay: "180ms",
-  },
-  {
-    className: "col-span-2 row-start-4 col-start-3",
-    darkTone: "bg-emerald-500/[0.18]",
-    lightTone: "bg-emerald-100/80",
-    delay: "300ms",
-  },
-  {
-    className: "col-span-2 row-start-4 col-start-5",
-    darkTone: "bg-amber-500/[0.12]",
-    lightTone: "bg-amber-100/80",
-    delay: "90ms",
-  },
-] as const;
-
-function HeatmapLoadingOverlay({ displayMode, messages }: { displayMode: DisplayMode; messages: HeatmapMessages }) {
-  // Deterministic on SSR + first client paint (index 0); randomize after mount to avoid hydration mismatch.
-  const [tipIndex, setTipIndex] = useState(0);
-
-  useEffect(() => {
-    const n = messages.loadingTips.length;
-    if (n < 2) {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setTipIndex(Math.floor(Math.random() * n));
-    }, 0);
-
-    return () => window.clearTimeout(timer);
-  }, [messages.loadingTips]);
-
-  const loadingTip = messages.loadingTips[tipIndex] ?? "";
-  const isLightMode = displayMode === "light";
-
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      aria-busy="true"
-      className={cn(
-        "absolute inset-0 z-40 flex flex-col items-center justify-center gap-6 px-4 py-8 text-center backdrop-blur-[10px]",
-        isLightMode ? "bg-[#f3f6fa]/94" : "bg-[#0a0d12]/92"
-      )}
-    >
-      <div className="pointer-events-none w-full max-w-[min(92vw,420px)] select-none">
-        <div className="mb-4 flex items-center justify-center gap-2 opacity-90">
-          <TrendingDown className="size-3.5 shrink-0 text-emerald-400/90" aria-hidden />
-          <div
-            className="h-2 w-[min(220px,55vw)] rounded-full shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
-            style={{
-              background:
-                "linear-gradient(90deg, rgb(5 150 105 / 0.75) 0%, rgb(71 85 105 / 0.35) 50%, rgb(220 38 38 / 0.75) 100%)",
-            }}
-          />
-          <TrendingUp className="size-3.5 shrink-0 text-red-400/90" aria-hidden />
-        </div>
-
-        <div
-          className={cn(
-            "grid h-[min(34vh,260px)] grid-cols-6 grid-rows-4 gap-1.5 rounded-md border p-2 shadow-[0_24px_80px_rgba(0,0,0,0.18)]",
-            isLightMode ? "border-slate-200/90 bg-white/92 shadow-[0_16px_48px_rgba(15,23,42,0.08)]" : "border-white/[0.07] bg-[#10141b]/90"
-          )}
-        >
-          {heatmapLoadingBlocks.map((block, index) => (
-            <div
-              key={index}
-              className={cn(
-                "rounded-[3px] animate-pulse",
-                isLightMode
-                  ? "shadow-[inset_0_0_0_1px_rgba(100,116,139,0.1)]"
-                  : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]",
-                block.className,
-                isLightMode ? block.lightTone : block.darkTone
-              )}
-              style={{ animationDelay: block.delay }}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="flex max-w-sm flex-col items-center gap-2.5">
-        <div className={cn("flex items-center gap-3", isLightMode ? "text-slate-900" : "text-slate-100")}>
-          <Loader2 className="size-5 shrink-0 animate-spin text-brand" aria-hidden />
-          <span className="text-[15px] font-semibold tracking-tight sm:text-base">{messages.loading}</span>
-        </div>
-        <div className="max-w-[min(92vw,26rem)] space-y-1">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            {messages.loadingTipLabel}
-          </p>
-          <p className="text-[12px] leading-relaxed text-muted-foreground sm:text-[13px]">{loadingTip}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function getHeatThemeDisplayName(theme: HeatTheme, locale: Locale, messages: HeatmapMessages) {
-  if (theme.builtin) {
-    if (theme.id === "soft") return messages.heatThemeSoft;
-    if (theme.id === "classic") return messages.heatThemeClassic;
-    if (theme.id === "muted") return messages.heatThemeMuted;
-    if (theme.id === "high-contrast") return messages.heatThemeHighContrast;
-  }
-  return locale === "en" ? theme.nameEn : theme.nameZh;
-}
-
-function getHeatStopLabel(messages: HeatmapMessages, field: HeatStopField) {
-  if (field === "flat") return messages.heatStopFlat;
-  if (field === "positiveSoft") return messages.heatStopPositiveSoft;
-  if (field === "positiveStrong") return messages.heatStopPositiveStrong;
-  if (field === "negativeSoft") return messages.heatStopNegativeSoft;
-  return messages.heatStopNegativeStrong;
-}
-
-function HeatThemeSettingsPanel({
-  messages,
-  locale,
-  displayMode,
-  priceColorMode,
-  heatThemeId,
-  customHeatThemes,
-  activeHeatTheme,
-  onHeatThemeIdChange,
-  onCustomHeatThemesChange,
-}: {
-  messages: HeatmapMessages;
-  locale: Locale;
-  displayMode: DisplayMode;
-  priceColorMode: PriceColorMode;
-  heatThemeId: string;
-  customHeatThemes: HeatTheme[];
-  activeHeatTheme: HeatTheme;
-  onHeatThemeIdChange: (id: string) => void;
-  onCustomHeatThemesChange: (themes: HeatTheme[]) => void;
-}) {
-  const importInputRef = useRef<HTMLInputElement | null>(null);
-  const [draftTheme, setDraftTheme] = useState<HeatTheme | null>(null);
-  const [editMode, setEditMode] = useState<"dark" | "light">(displayMode);
-  const availableThemes = useMemo(
-    () => [...builtinHeatThemes, ...customHeatThemes],
-    [customHeatThemes]
-  );
-  const isEditing = Boolean(draftTheme);
-  const editingStops = draftTheme
-    ? editMode === "light"
-      ? draftTheme.light
-      : draftTheme.dark
-    : null;
-
-  useEffect(() => {
-    setEditMode(displayMode);
-  }, [displayMode]);
-
-  useEffect(() => {
-    setDraftTheme(null);
-  }, [heatThemeId]);
-
-  const startEditExisting = () => {
-    if (activeHeatTheme.builtin) {
-      return;
-    }
-    setDraftTheme(cloneHeatTheme(activeHeatTheme));
-    setEditMode(displayMode);
-  };
-
-  const startCreateCustom = () => {
-    const next = createCustomHeatTheme(
-      activeHeatTheme,
-      locale === "zh" ? `自定义 ${customHeatThemes.length + 1}` : `Custom ${customHeatThemes.length + 1}`,
-      `Custom ${customHeatThemes.length + 1}`
-    );
-    setDraftTheme(next);
-    setEditMode(displayMode);
-  };
-
-  const updateDraft = (updater: (theme: HeatTheme) => HeatTheme) => {
-    setDraftTheme((current) => (current ? updater(current) : current));
-  };
-
-  const handleSave = () => {
-    if (!draftTheme) {
-      return;
-    }
-    const exists = customHeatThemes.some((theme) => theme.id === draftTheme.id);
-    onCustomHeatThemesChange(
-      exists
-        ? customHeatThemes.map((theme) => (theme.id === draftTheme.id ? draftTheme : theme))
-        : [...customHeatThemes, draftTheme]
-    );
-    onHeatThemeIdChange(draftTheme.id);
-    setDraftTheme(null);
-    toast.success(messages.heatThemeSaved);
-  };
-
-  const handleCancel = () => {
-    setDraftTheme(null);
-  };
-
-  const handleDeleteCustom = () => {
-    if (activeHeatTheme.builtin || draftTheme) {
-      return;
-    }
-    const remaining = customHeatThemes.filter((theme) => theme.id !== activeHeatTheme.id);
-    onCustomHeatThemesChange(remaining);
-    onHeatThemeIdChange(defaultHeatThemeId);
-  };
-
-  const handleExport = () => {
-    try {
-      const payload = buildHeatThemeExport(draftTheme ?? activeHeatTheme);
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${payload.theme.nameEn.replace(/\s+/g, "-").toLowerCase() || "heatmap-theme"}.json`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error(messages.heatThemeExportFailed);
-    }
-  };
-
-  const handleImportFile = async (file: File | null) => {
-    if (!file) {
-      return;
-    }
-    try {
-      const text = await file.text();
-      const imported = parseHeatThemeExport(text);
-      if (!imported) {
-        toast.error(messages.heatThemeImportFailed);
-        return;
-      }
-      setDraftTheme(imported);
-      setEditMode(displayMode);
-      toast.success(messages.heatThemeImportSuccess);
-    } catch {
-      toast.error(messages.heatThemeImportFailed);
-    } finally {
-      if (importInputRef.current) {
-        importInputRef.current.value = "";
-      }
-    }
-  };
-
-  return (
-    <section className="space-y-3">
-      <h3 className="text-sm font-semibold">{messages.heatThemeLabel}</h3>
-
-      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-        {availableThemes.map((theme) => {
-          const active = !isEditing && heatThemeId === theme.id;
-          const stops = displayMode === "light" ? theme.light : theme.dark;
-          return (
-            <button
-              key={theme.id}
-              type="button"
-              disabled={isEditing}
-              onClick={() => onHeatThemeIdChange(theme.id)}
-              aria-pressed={active}
-              className={cn(
-                "border px-2.5 py-1.5 text-left transition-colors",
-                active
-                  ? "border-brand/70 bg-brand/15"
-                  : "border-border bg-background/70 hover:bg-muted",
-                isEditing && "cursor-not-allowed opacity-55"
-              )}
-            >
-              <div className="flex items-center justify-between gap-1.5">
-                <span className="truncate text-[12px] font-semibold text-foreground">
-                  {getHeatThemeDisplayName(theme, locale, messages)}
-                </span>
-                {!theme.builtin && (
-                  <span className="shrink-0 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-                    {messages.heatThemeCustom}
-                  </span>
-                )}
-              </div>
-              <div
-                className="mt-1.5 h-1.5 w-full border border-border/70"
-                style={{
-                  background: previewGradientFromStops(stops, priceColorMode === "red-rise"),
-                }}
-              />
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="flex flex-wrap gap-1.5">
-        {!isEditing && (
-          <>
-            <button
-              type="button"
-              onClick={startCreateCustom}
-              className="border border-border bg-background/70 px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              {messages.heatThemeCreateCustom}
-            </button>
-            {!activeHeatTheme.builtin && (
-              <button
-                type="button"
-                onClick={startEditExisting}
-                className="border border-border bg-background/70 px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                {messages.heatThemeEdit}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={handleExport}
-              className="inline-flex items-center gap-1 border border-border bg-background/70 px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <Download className="size-3" />
-              {messages.heatThemeExport}
-            </button>
-            <button
-              type="button"
-              onClick={() => importInputRef.current?.click()}
-              className="border border-border bg-background/70 px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              {messages.heatThemeImport}
-            </button>
-            {!activeHeatTheme.builtin && (
-              <button
-                type="button"
-                onClick={handleDeleteCustom}
-                className="border border-border bg-background/70 px-2.5 py-1.5 text-[12px] font-medium text-destructive transition-colors hover:bg-muted"
-              >
-                {messages.heatThemeDeleteCustom}
-              </button>
-            )}
-          </>
-        )}
-        <input
-          ref={importInputRef}
-          type="file"
-          accept="application/json,.json"
-          className="hidden"
-          onChange={(event) => void handleImportFile(event.target.files?.[0] ?? null)}
-        />
-      </div>
-
-      {draftTheme && editingStops && (
-        <div className="space-y-2.5 border border-brand/40 bg-brand/5 p-2.5">
-          <p className="text-[11px] leading-relaxed text-muted-foreground">{messages.heatThemeEditingHint}</p>
-
-          <div className="grid gap-1.5 sm:grid-cols-2">
-            <label className="space-y-1 text-[11px] text-muted-foreground">
-              <span>{messages.heatThemeNameZh}</span>
-              <input
-                value={draftTheme.nameZh}
-                onChange={(event) =>
-                  updateDraft((theme) => ({ ...theme, nameZh: event.target.value }))
-                }
-                className="w-full border border-border bg-background px-2 py-1.5 text-[12px] text-foreground outline-none focus:border-brand/60"
-              />
-            </label>
-            <label className="space-y-1 text-[11px] text-muted-foreground">
-              <span>{messages.heatThemeNameEn}</span>
-              <input
-                value={draftTheme.nameEn}
-                onChange={(event) =>
-                  updateDraft((theme) => ({ ...theme, nameEn: event.target.value }))
-                }
-                className="w-full border border-border bg-background px-2 py-1.5 text-[12px] text-foreground outline-none focus:border-brand/60"
-              />
-            </label>
-          </div>
-
-          <div className="flex gap-1.5">
-            <button
-              type="button"
-              onClick={() => setEditMode("dark")}
-              className={cn(
-                "border px-2.5 py-1 text-[11px] font-semibold transition-colors",
-                editMode === "dark"
-                  ? "border-brand/70 bg-brand/15 text-foreground"
-                  : "border-border text-muted-foreground hover:bg-muted"
-              )}
-            >
-              {messages.heatThemeEditDark}
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditMode("light")}
-              className={cn(
-                "border px-2.5 py-1 text-[11px] font-semibold transition-colors",
-                editMode === "light"
-                  ? "border-brand/70 bg-brand/15 text-foreground"
-                  : "border-border text-muted-foreground hover:bg-muted"
-              )}
-            >
-              {messages.heatThemeEditLight}
-            </button>
-          </div>
-
-          <div
-            className="h-1.5 w-full border border-border/70"
-            style={{
-              background: previewGradientFromStops(editingStops, priceColorMode === "red-rise"),
-            }}
-          />
-
-          <div className="space-y-1">
-            {heatStopFields.map((field) => {
-              const color = editingStops[field];
-              const hex = rgbToHex(color);
-              return (
-                <label
-                  key={field}
-                  className="flex items-center justify-between gap-2 border border-border/80 bg-background/70 px-2 py-1"
-                >
-                  <span className="min-w-0 truncate text-[12px] text-muted-foreground">
-                    {getHeatStopLabel(messages, field)}
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <input
-                      type="color"
-                      value={hex}
-                      onChange={(event) => {
-                        const next = parseHexColor(event.target.value);
-                        if (!next) {
-                          return;
-                        }
-                        updateDraft((theme) => ({
-                          ...theme,
-                          [editMode]: {
-                            ...theme[editMode],
-                            [field]: next,
-                          },
-                        }));
-                      }}
-                      className="size-6 cursor-pointer border border-border bg-transparent p-0"
-                    />
-                    <input
-                      value={hex}
-                      onChange={(event) => {
-                        const next = parseHexColor(event.target.value);
-                        if (!next) {
-                          return;
-                        }
-                        updateDraft((theme) => ({
-                          ...theme,
-                          [editMode]: {
-                            ...theme[editMode],
-                            [field]: next,
-                          },
-                        }));
-                      }}
-                      className="w-[6.5rem] border border-border bg-background px-1.5 py-1 font-mono text-[11px] text-foreground outline-none focus:border-brand/60"
-                    />
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              onClick={handleSave}
-              className="border border-brand/70 bg-brand/20 px-2.5 py-1.5 text-[12px] font-semibold text-foreground transition-colors hover:bg-brand/30"
-            >
-              {messages.heatThemeSave}
-            </button>
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="border border-border bg-background/70 px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              {messages.heatThemeCancel}
-            </button>
-            <button
-              type="button"
-              onClick={handleExport}
-              className="inline-flex items-center gap-1 border border-border bg-background/70 px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <Download className="size-3" />
-              {messages.heatThemeExport}
-            </button>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function ChangeRangeSlider({
-  value,
-  gradient,
-  minAriaLabel,
-  maxAriaLabel,
-  onChange,
-}: {
-  value: ChangeRangeFilter;
-  gradient: string;
-  minAriaLabel: string;
-  maxAriaLabel: string;
-  onChange: (range: ChangeRangeFilter) => void;
-}) {
-  const trackRef = useRef<HTMLDivElement | null>(null);
-  const dragThumbRef = useRef<"min" | "max" | null>(null);
-  const valueRef = useRef(value);
-  const onChangeRef = useRef(onChange);
-
-  // Sync refs from props in a passive effect — writing them during render is unsafe.
-  useEffect(() => {
-    valueRef.current = value;
-    onChangeRef.current = onChange;
-  });
-
-  const bounds = filterToSliderBounds(value);
-  const span = changeRangeSliderMax - changeRangeSliderMin;
-  const minPercent = ((bounds.min - changeRangeSliderMin) / span) * 100;
-  const maxPercent = ((bounds.max - changeRangeSliderMin) / span) * 100;
-
-  const valueFromClientX = (clientX: number) => {
-    const track = trackRef.current;
-    if (!track) {
-      return changeRangeSliderMin;
-    }
-
-    const rect = track.getBoundingClientRect();
-    if (rect.width <= 0) {
-      return changeRangeSliderMin;
-    }
-
-    const ratio = (clientX - rect.left) / rect.width;
-    return snapChangeRangeValue(changeRangeSliderMin + ratio * span);
-  };
-
-  const applyThumb = (thumb: "min" | "max", clientX: number) => {
-    const nextValue = valueFromClientX(clientX);
-    const currentValue = valueRef.current;
-    const current = {
-      min: currentValue.min ?? changeRangeSliderMin,
-      max: currentValue.max ?? changeRangeSliderMax,
-    };
-
-    if (thumb === "min") {
-      onChangeRef.current({ min: Math.min(nextValue, current.max), max: current.max });
-      return;
-    }
-
-    onChangeRef.current({ min: current.min, max: Math.max(nextValue, current.min) });
-  };
-
-  const pickThumb = (clientX: number): "min" | "max" => {
-    const nextValue = valueFromClientX(clientX);
-    return Math.abs(nextValue - bounds.min) <= Math.abs(nextValue - bounds.max) ? "min" : "max";
-  };
-
-  return (
-    <div className="space-y-1.5">
-      <div
-        ref={trackRef}
-        className="relative h-7 cursor-pointer touch-none select-none"
-        onPointerDown={(event) => {
-          if (event.button !== 0) {
-            return;
-          }
-          event.preventDefault();
-          event.currentTarget.setPointerCapture(event.pointerId);
-          const thumb = pickThumb(event.clientX);
-          dragThumbRef.current = thumb;
-          applyThumb(thumb, event.clientX);
-        }}
-        onPointerMove={(event) => {
-          if (!dragThumbRef.current) {
-            return;
-          }
-          applyThumb(dragThumbRef.current, event.clientX);
-        }}
-        onPointerUp={() => {
-          dragThumbRef.current = null;
-        }}
-        onPointerCancel={() => {
-          dragThumbRef.current = null;
-        }}
-      >
-        <div
-          className="pointer-events-none absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2"
-          style={{ background: gradient }}
-        />
-        <div
-          className="pointer-events-none absolute top-1/2 h-1.5 -translate-y-1/2 bg-background/75"
-          style={{ left: 0, width: `${minPercent}%` }}
-        />
-        <div
-          className="pointer-events-none absolute top-1/2 h-1.5 -translate-y-1/2 bg-background/75"
-          style={{ left: `${maxPercent}%`, right: 0 }}
-        />
-        <button
-          type="button"
-          aria-label={minAriaLabel}
-          aria-valuemin={changeRangeSliderMin}
-          aria-valuemax={bounds.max}
-          aria-valuenow={bounds.min}
-          role="slider"
-          tabIndex={0}
-          className="pointer-events-none absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 border-2 border-foreground bg-card shadow-[0_1px_4px_rgba(0,0,0,0.28)]"
-          style={{ left: `${minPercent}%` }}
-        />
-        <button
-          type="button"
-          aria-label={maxAriaLabel}
-          aria-valuemin={bounds.min}
-          aria-valuemax={changeRangeSliderMax}
-          aria-valuenow={bounds.max}
-          role="slider"
-          tabIndex={0}
-          className="pointer-events-none absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 border-2 border-foreground bg-card shadow-[0_1px_4px_rgba(0,0,0,0.28)]"
-          style={{ left: `${maxPercent}%` }}
-        />
-      </div>
-      <div className="flex justify-between text-[10px] font-medium tabular-nums text-muted-foreground">
-        {changeRangeSliderTicks.map((tick) => (
-          <span key={tick} className={cn(tick === 0 && "text-foreground")}>
-            {formatChangeRangeBound(tick)}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function filterChipClass(active: boolean) {
-  return cn(
-    "h-8 border px-2 text-center text-[12px] font-semibold leading-tight transition-colors",
-    active
-      ? "border-brand/70 bg-brand/18 text-foreground"
-      : "border-border bg-background/80 text-muted-foreground hover:bg-muted hover:text-foreground"
-  );
-}
-
-function getViewportSize() {
-  const visual = typeof window !== "undefined" ? window.visualViewport : null;
-  return {
-    width: visual?.width ?? window.innerWidth,
-    height: visual?.height ?? window.innerHeight,
-    offsetLeft: visual?.offsetLeft ?? 0,
-    offsetTop: visual?.offsetTop ?? 0,
-  };
-}
-
-function FilterPopover({
-  open,
-  isMobile,
-  closeLabel,
-  triggerRefs,
-  layoutKey,
-  onClose,
-  onMouseEnter,
-  onMouseLeave,
-  children,
-}: {
-  open: boolean;
-  isMobile: boolean;
-  closeLabel: string;
-  triggerRefs: Array<RefObject<HTMLButtonElement | null>>;
-  layoutKey: string;
-  onClose: () => void;
-  onMouseEnter?: () => void;
-  onMouseLeave?: () => void;
-  children: ReactNode;
-}) {
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  const [style, setStyle] = useState<CSSProperties>({
-    position: "fixed",
-    left: 12,
-    top: 12,
-    width: 340,
-    maxHeight: "calc(100dvh - 16px)",
-    zIndex: 80,
-  });
-
-  useLayoutEffect(() => {
-    if (!open || isMobile) {
-      return;
-    }
-
-    const update = () => {
-      const trigger = triggerRefs
-        .map((item) => item.current)
-        .find((node) => {
-          if (!node) {
-            return false;
-          }
-          const rect = node.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0;
-        });
-      const viewport = getViewportSize();
-      const margin = 8;
-      const width = Math.min(340, viewport.width - margin * 2);
-      const header = panelRef.current?.querySelector("header");
-      const scrollContent = panelRef.current?.querySelector<HTMLElement>("[data-filter-scroll]");
-      const contentHeight =
-        (header?.getBoundingClientRect().height ?? 0) + (scrollContent?.scrollHeight ?? 0) + 2;
-      const availableHeight = Math.max(240, viewport.height - margin * 2);
-      const height = Math.min(Math.max(240, contentHeight || 560), availableHeight);
-      let left = viewport.offsetLeft + margin;
-      let top = viewport.offsetTop + margin;
-
-      if (trigger) {
-        const rect = trigger.getBoundingClientRect();
-        left = rect.right + 8;
-        top = rect.top;
-        if (left + width > viewport.offsetLeft + viewport.width - margin) {
-          left = Math.min(
-            Math.max(viewport.offsetLeft + margin, rect.left),
-            viewport.offsetLeft + viewport.width - width - margin
-          );
-        }
-      }
-
-      const minTop = viewport.offsetTop + margin;
-      const maxTop = Math.max(minTop, viewport.offsetTop + viewport.height - height - margin);
-      top = clamp(top, minTop, maxTop);
-
-      setStyle({
-        position: "fixed",
-        left,
-        top,
-        width,
-        height,
-        maxHeight: availableHeight,
-        zIndex: 80,
-      });
-    };
-
-    update();
-    const frame = window.requestAnimationFrame(update);
-    const timer = window.setTimeout(update, 320);
-    window.addEventListener("resize", update);
-    window.visualViewport?.addEventListener("resize", update);
-    window.visualViewport?.addEventListener("scroll", update);
-    document.addEventListener("scroll", update, true);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.clearTimeout(timer);
-      window.removeEventListener("resize", update);
-      window.visualViewport?.removeEventListener("resize", update);
-      window.visualViewport?.removeEventListener("scroll", update);
-      document.removeEventListener("scroll", update, true);
-    };
-  }, [isMobile, layoutKey, open, triggerRefs]);
-
-  if (!open || typeof document === "undefined") {
-    return null;
-  }
-
-  if (isMobile) {
-    return createPortal(
-      <div className="fixed inset-0 z-[10010] flex flex-col justify-end" role="presentation">
-        <button
-          type="button"
-          aria-label={closeLabel}
-          onClick={onClose}
-          className="absolute inset-0 bg-black/62 backdrop-blur-sm"
-        />
-        <div className="relative flex h-[min(92dvh,100%)] max-h-[92dvh] w-full flex-col pb-[env(safe-area-inset-bottom)]">
-          {children}
-        </div>
-      </div>,
-      document.body
-    );
-  }
-
-  return createPortal(
-    <div
-      ref={panelRef}
-      style={style}
-      className="flex flex-col overflow-hidden"
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-    >
-      {children}
-    </div>,
-    document.body
-  );
-}
-
-function FilterPanel({
-  layout = "popover",
-  messages,
-  locale,
-  shortcutLabel,
-  boards,
-  boardFilter,
-  trendFilter,
-  changeRangeFilter,
-  changeRangeMinInput,
-  changeRangeMaxInput,
-  sizeMode,
-  thumbnailMode,
-  period,
-  legendGradient,
-  activeFilterCount,
-  onClose,
-  onToggleBoard,
-  onClearBoardFilter,
-  onTrendFilterChange,
-  onChangeRangeMinInputChange,
-  onChangeRangeMaxInputChange,
-  onCommitChangeRange,
-  onChangeRange,
-  onClearChangeRange,
-  onSizeModeChange,
-  onThumbnailModeChange,
-  onPeriodChange,
-  onResetFilters,
-}: {
-  layout?: "popover" | "sheet";
-  messages: HeatmapMessages;
-  locale: Locale;
-  shortcutLabel: string;
-  boards: Array<{ code: string; name: string; stockCount: number }>;
-  boardFilter: string[];
-  trendFilter: string;
-  changeRangeFilter: ChangeRangeFilter;
-  changeRangeMinInput: string;
-  changeRangeMaxInput: string;
-  sizeMode: HeatmapSizeMode;
-  thumbnailMode: boolean;
-  period: HeatmapPeriodKey;
-  legendGradient: string;
-  activeFilterCount: number;
-  onClose: () => void;
-  onToggleBoard: (boardName: string) => void;
-  onClearBoardFilter: () => void;
-  onTrendFilterChange: (value: string) => void;
-  onChangeRangeMinInputChange: (value: string) => void;
-  onChangeRangeMaxInputChange: (value: string) => void;
-  onCommitChangeRange: () => void;
-  onChangeRange: (range: ChangeRangeFilter) => void;
-  onClearChangeRange: () => void;
-  onSizeModeChange: (mode: HeatmapSizeMode) => void;
-  onThumbnailModeChange: (enabled: boolean) => void;
-  onPeriodChange: (next: HeatmapPeriodKey) => void;
-  onResetFilters: () => void;
-}) {
-  const panelRef = useRef<HTMLElement | null>(null);
-  const isAllBoardsSelected = boardFilter.length === 0;
-  const selectedBoardCountLabel = messages.selectedBoardCount.replace("{count}", String(boardFilter.length));
-
-  useEffect(() => {
-    if (layout === "sheet") {
-      return;
-    }
-
-    function onPointerDown(event: PointerEvent) {
-      const target = event.target as HTMLElement | null;
-      if (!target) {
-        return;
-      }
-      if (panelRef.current?.contains(target) || target.closest("[data-heatmap-filter-trigger]")) {
-        return;
-      }
-      onClose();
-    }
-
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-    };
-  }, [layout, onClose]);
-
-  return (
-    <section
-      ref={panelRef}
-      role="dialog"
-      aria-labelledby="heatmap-filters-title"
-      aria-modal={layout === "sheet" ? true : undefined}
-      className={cn(
-        "flex h-full min-h-0 w-full flex-col overflow-hidden border border-border bg-card/96 text-card-foreground backdrop-blur-sm",
-        layout === "sheet"
-          ? "rounded-t-lg border-b-0 shadow-[0_-24px_100px_rgba(0,0,0,0.48)]"
-          : "shadow-[0_18px_48px_rgba(0,0,0,0.28)]"
-      )}
-    >
-      {layout === "sheet" && (
-        <div className="flex items-center justify-center pt-2">
-          <span className="h-1 w-10 rounded-full bg-muted-foreground/40" aria-hidden />
-        </div>
-      )}
-      <header className="flex items-center justify-between gap-2 border-b border-border px-2.5 py-2.5 sm:py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <ListFilter className="size-3.5 shrink-0 text-muted-foreground" />
-          <h2 id="heatmap-filters-title" className="text-[13px] font-semibold leading-none">
-            {messages.filtersTitle}
-          </h2>
-          {layout !== "sheet" && (
-            <span className="font-mono text-[10px] font-semibold text-muted-foreground">{shortcutLabel}</span>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {activeFilterCount > 0 && (
-            <button
-              type="button"
-              onClick={onResetFilters}
-              className="px-1.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {messages.filtersReset}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={messages.closeSheet}
-            className="inline-flex size-7 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <X className="size-3.5" />
-          </button>
-        </div>
-      </header>
-
-      <div
-        data-filter-scroll
-        className={cn(
-          "min-h-0 flex-1 space-y-3.5 overflow-y-auto p-2.5",
-          layout === "sheet" && "space-y-4 overscroll-contain"
-        )}
-      >
-        <section>
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <h3 className="text-[11px] font-semibold text-muted-foreground">{messages.boardFilterLabel}</h3>
-            {!isAllBoardsSelected && (
-              <button
-                type="button"
-                onClick={onClearBoardFilter}
-                className="text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {messages.clearBoardFilter}
-              </button>
-            )}
-          </div>
-          <div className="overflow-hidden border border-border">
-            <button
-              type="button"
-              onClick={onClearBoardFilter}
-              className={cn(
-                "flex h-8 w-full items-center px-2.5 text-left text-[12px] font-semibold transition-colors",
-                isAllBoardsSelected
-                  ? "bg-brand/18 text-foreground"
-                  : "bg-background/70 text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              {isAllBoardsSelected ? messages.allBoards : selectedBoardCountLabel}
-            </button>
-            <div
-              className={cn(
-                "overflow-y-auto overscroll-contain border-t border-border",
-                layout === "sheet" ? "max-h-48" : "max-h-40"
-              )}
-            >
-              {boards.map((board) => {
-                const isSelected = boardFilter.includes(board.name);
-                return (
-                  <button
-                    key={board.code}
-                    type="button"
-                    onClick={() => onToggleBoard(board.name)}
-                    className={cn(
-                      "flex h-8 w-full min-w-0 items-center gap-2 px-2.5 text-left transition-colors",
-                      isSelected ? "bg-brand/12 text-foreground" : "text-foreground hover:bg-muted"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "inline-flex size-3.5 shrink-0 items-center justify-center border",
-                        isSelected
-                          ? "border-brand bg-brand text-brand-foreground"
-                          : "border-border bg-background"
-                      )}
-                      aria-hidden
-                    >
-                      {isSelected ? <Check className="size-2.5" strokeWidth={3} /> : null}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-[12px] leading-tight">{board.name}</span>
-                    <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                      {board.stockCount}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-
-        <div className={layout === "sheet" ? "grid grid-cols-2 gap-3" : "space-y-3.5"}>
-          <section>
-            <div className="mb-1.5 flex items-center justify-between gap-2">
-              <h3 className="text-[11px] font-semibold text-muted-foreground">{messages.metricLabel}</h3>
-              <span className="text-[11px] font-medium tabular-nums text-muted-foreground">
-                {getPeriodLabel(messages, period)}
-              </span>
-            </div>
-            <div className="grid grid-cols-4 gap-1">
-              {periodOptions.map((option) => {
-                const isActive = period === option;
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => onPeriodChange(option)}
-                    title={getPeriodLabel(messages, option)}
-                    aria-pressed={isActive}
-                    className={filterChipClass(isActive)}
-                  >
-                    {getCompactPeriodLabel(option, locale)}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          <section>
-            <h3 className="mb-1.5 text-[11px] font-semibold text-muted-foreground">{messages.trendFilterLabel}</h3>
-            <div className="grid grid-cols-3 gap-1">
-              <button
-                type="button"
-                onClick={() => onTrendFilterChange(allTrendsValue)}
-                aria-pressed={trendFilter === allTrendsValue}
-                className={filterChipClass(trendFilter === allTrendsValue)}
-              >
-                {messages.allTrends}
-              </button>
-              <button
-                type="button"
-                onClick={() => onTrendFilterChange(risingOnlyValue)}
-                aria-pressed={trendFilter === risingOnlyValue}
-                className={filterChipClass(trendFilter === risingOnlyValue)}
-              >
-                {messages.risingOnly}
-              </button>
-              <button
-                type="button"
-                onClick={() => onTrendFilterChange(fallingOnlyValue)}
-                aria-pressed={trendFilter === fallingOnlyValue}
-                className={filterChipClass(trendFilter === fallingOnlyValue)}
-              >
-                {messages.fallingOnly}
-              </button>
-            </div>
-          </section>
-        </div>
-
-        <section>
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <h3 className="text-[11px] font-semibold text-muted-foreground">{messages.changeRangeFilterLabel}</h3>
-            {isChangeRangeActive(changeRangeFilter) && (
-              <button
-                type="button"
-                onClick={onClearChangeRange}
-                className="text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {messages.clearChangeRangeFilter}
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="relative min-w-0 flex-1">
-              <input
-                id="filter-change-range-min"
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                spellCheck={false}
-                value={changeRangeMinInput}
-                placeholder={messages.changeRangeUnbounded}
-                aria-label={messages.changeRangeMinPlaceholder}
-                onChange={(event) => onChangeRangeMinInputChange(event.target.value)}
-                onBlur={onCommitChangeRange}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.currentTarget.blur();
-                  }
-                }}
-                className="h-8 w-full border border-border bg-background/80 py-0 pl-2 pr-6 text-[12px] font-semibold tabular-nums text-foreground outline-none transition-colors placeholder:font-medium placeholder:text-muted-foreground/65 focus:border-brand/60"
-              />
-              <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-[10px] font-semibold text-muted-foreground">
-                %
-              </span>
-            </div>
-            <span className="shrink-0 text-[11px] text-muted-foreground">~</span>
-            <div className="relative min-w-0 flex-1">
-              <input
-                id="filter-change-range-max"
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                spellCheck={false}
-                value={changeRangeMaxInput}
-                placeholder={messages.changeRangeUnbounded}
-                aria-label={messages.changeRangeMaxPlaceholder}
-                onChange={(event) => onChangeRangeMaxInputChange(event.target.value)}
-                onBlur={onCommitChangeRange}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.currentTarget.blur();
-                  }
-                }}
-                className="h-8 w-full border border-border bg-background/80 py-0 pl-2 pr-6 text-[12px] font-semibold tabular-nums text-foreground outline-none transition-colors placeholder:font-medium placeholder:text-muted-foreground/65 focus:border-brand/60"
-              />
-              <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-[10px] font-semibold text-muted-foreground">
-                %
-              </span>
-            </div>
-          </div>
-          <div className="mt-2">
-            <ChangeRangeSlider
-              value={changeRangeFilter}
-              gradient={legendGradient}
-              minAriaLabel={messages.changeRangeMinPlaceholder}
-              maxAriaLabel={messages.changeRangeMaxPlaceholder}
-              onChange={onChangeRange}
-            />
-          </div>
-          <div className="mt-2 grid grid-cols-3 gap-1">
-            {changeRangeSpanPresets.map((preset) => {
-              const isActive = changeRangeFiltersEqual(changeRangeFilter, preset);
-              return (
-                <button
-                  key={preset.label}
-                  type="button"
-                  aria-pressed={isActive}
-                  onClick={() =>
-                    onChangeRange(isActive ? emptyChangeRangeFilter : { min: preset.min, max: preset.max })
-                  }
-                  className={cn(
-                    "h-7 border text-[11px] font-semibold tabular-nums transition-colors",
-                    isActive
-                      ? "border-brand/70 bg-brand/18 text-foreground"
-                      : "border-border bg-background/80 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        <div className={layout === "sheet" ? "grid grid-cols-2 gap-3" : "space-y-3.5"}>
-          <section>
-            <h3 className="mb-1.5 text-[11px] font-semibold text-muted-foreground">{messages.sizeModeLabel}</h3>
-            <div className="grid grid-cols-3 gap-1">
-              <button
-                type="button"
-                onClick={() => onSizeModeChange("marketCap")}
-                aria-pressed={sizeMode === "marketCap"}
-                className={filterChipClass(sizeMode === "marketCap")}
-              >
-                {messages.sizeModeMarketCap}
-              </button>
-              <button
-                type="button"
-                onClick={() => onSizeModeChange("amount")}
-                aria-pressed={sizeMode === "amount"}
-                className={filterChipClass(sizeMode === "amount")}
-              >
-                {messages.sizeModeAmount}
-              </button>
-              <button
-                type="button"
-                onClick={() => onSizeModeChange("turnoverRate")}
-                aria-pressed={sizeMode === "turnoverRate"}
-                className={filterChipClass(sizeMode === "turnoverRate")}
-              >
-                {messages.sizeModeTurnover}
-              </button>
-            </div>
-          </section>
-
-          <section>
-            <h3 className="mb-1.5 text-[11px] font-semibold text-muted-foreground">{messages.thumbnailModeLabel}</h3>
-            <div className="grid grid-cols-2 gap-1">
-              <button
-                type="button"
-                onClick={() => onThumbnailModeChange(false)}
-                aria-pressed={!thumbnailMode}
-                className={filterChipClass(!thumbnailMode)}
-              >
-                {messages.thumbnailModeOff}
-              </button>
-              <button
-                type="button"
-                onClick={() => onThumbnailModeChange(true)}
-                aria-pressed={thumbnailMode}
-                className={filterChipClass(thumbnailMode)}
-              >
-                {messages.thumbnailModeOn}
-              </button>
-            </div>
-          </section>
-        </div>
-      </div>
-
-      {layout === "sheet" && (
-        <footer className="flex shrink-0 gap-2 border-t border-border bg-card/98 p-2.5">
-          <button
-            type="button"
-            onClick={onResetFilters}
-            disabled={activeFilterCount === 0}
-            className="h-10 flex-1 border border-border bg-background/80 px-3 text-[12px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {messages.filtersReset}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-10 flex-[1.35] bg-brand px-3 text-[12px] font-semibold text-brand-foreground transition-colors hover:bg-brand/90"
-          >
-            {messages.closeSheet}
-          </button>
-        </footer>
-      )}
-    </section>
-  );
-}
-
-function SettingsDrawer({
-  open,
-  tab,
-  messages,
-  locale,
-  displayMode,
-  filterOpenMode,
-  headerTrendStats,
-  heatmapBorders,
-  refreshIntervalSeconds,
-  themeColor,
-  priceColorMode,
-  heatThemeId,
-  customHeatThemes,
-  activeHeatTheme,
-  shortcutBindings,
-  watchlist,
-  onClose,
-  onTabChange,
-  onLocaleChange,
-  onDisplayModeChange,
-  onFilterOpenModeChange,
-  onHeaderTrendStatsChange,
-  onHeatmapBordersChange,
-  onRefreshIntervalChange,
-  onThemeColorChange,
-  onPriceColorModeChange,
-  onHeatThemeIdChange,
-  onCustomHeatThemesChange,
-  onShortcutBindingsChange,
-  onShortcutRecordingChange,
-  onWatchlistAdd,
-  onWatchlistRemove,
-  onWatchlistClear,
-  onWatchlistImportText,
-  onWatchlistSyncReplace,
-  emSyncIntervalSec,
-  onEmSyncIntervalChange,
-  areaTipMessage,
-}: {
-  open: boolean;
-  tab: SettingsTab;
-  messages: HeatmapMessages;
-  locale: Locale;
-  displayMode: DisplayMode;
-  filterOpenMode: FilterOpenMode;
-  headerTrendStats: boolean;
-  heatmapBorders: boolean;
-  refreshIntervalSeconds: number;
-  themeColor: ThemeColorKey;
-  priceColorMode: PriceColorMode;
-  heatThemeId: string;
-  customHeatThemes: HeatTheme[];
-  activeHeatTheme: HeatTheme;
-  shortcutBindings: ShortcutBindings;
-  watchlist: WatchlistItem[];
-  areaTipMessage: string;
-  onClose: () => void;
-  onTabChange: (tab: SettingsTab) => void;
-  onLocaleChange: (locale: Locale) => void;
-  onDisplayModeChange: (mode: DisplayMode) => void;
-  onFilterOpenModeChange: (mode: FilterOpenMode) => void;
-  onHeaderTrendStatsChange: (enabled: boolean) => void;
-  onHeatmapBordersChange: (enabled: boolean) => void;
-  onRefreshIntervalChange: (seconds: number) => void;
-  onThemeColorChange: (theme: ThemeColorKey) => void;
-  onPriceColorModeChange: (mode: PriceColorMode) => void;
-  onHeatThemeIdChange: (id: string) => void;
-  onCustomHeatThemesChange: (themes: HeatTheme[]) => void;
-  onShortcutBindingsChange: (bindings: ShortcutBindings) => void;
-  onShortcutRecordingChange: (recording: boolean) => void;
-  onWatchlistAdd: (item: WatchlistItem) => boolean;
-  onWatchlistRemove: (code: string) => void;
-  onWatchlistClear: () => void;
-  onWatchlistImportText: (raw: string) => void;
-  onWatchlistSyncReplace: (items: WatchlistItem[]) => void;
-  emSyncIntervalSec: number;
-  onEmSyncIntervalChange: (seconds: number) => void;
-}) {
-  const isMobile = useIsMobile();
-  const [recordingAction, setRecordingAction] = useState<ShortcutActionId | null>(null);
-  const [copiedWebmcpPrompt, setCopiedWebmcpPrompt] = useState<string | null>(null);
-  const [intervalDraft, setIntervalDraft] = useState(() => String(refreshIntervalSeconds));
-
-  useEffect(() => {
-    setIntervalDraft(String(refreshIntervalSeconds));
-  }, [refreshIntervalSeconds]);
-
-  // Discard an uncommitted draft when the drawer closes without a blur event.
-  useEffect(() => {
-    if (!open) {
-      setIntervalDraft(String(refreshIntervalSeconds));
-    }
-  }, [open, refreshIntervalSeconds]);
-
-  const commitRefreshInterval = () => {
-    const parsed = Number.parseInt(intervalDraft, 10);
-    if (!Number.isFinite(parsed)) {
-      setIntervalDraft(String(refreshIntervalSeconds));
-      return;
-    }
-    onRefreshIntervalChange(
-      Math.min(maxRefreshIntervalSeconds, Math.max(minRefreshIntervalSeconds, parsed))
-    );
-  };
-
-  const copyWebmcpPrompt = async (prompt: string) => {
-    try {
-      if (!navigator.clipboard) {
-        throw new Error("Clipboard API unavailable");
-      }
-      await navigator.clipboard.writeText(prompt);
-      setCopiedWebmcpPrompt(prompt);
-      window.setTimeout(() => setCopiedWebmcpPrompt((current) => (current === prompt ? null : current)), 1800);
-    } catch {
-      toast.error(messages.webmcpPromptCopyFailed, { id: "webmcp-prompt-copy" });
-    }
-  };
-
-  useEffect(() => {
-    if (!open || tab !== "shortcuts") {
-      setRecordingAction(null);
-    }
-  }, [open, tab]);
-
-  useEffect(() => {
-    if (isMobile && (tab === "shortcuts" || tab === "help" || tab === "webmcp")) {
-      onTabChange("appearance");
-    }
-  }, [isMobile, onTabChange, tab]);
-
-  useEffect(() => {
-    onShortcutRecordingChange(Boolean(recordingAction));
-    return () => {
-      onShortcutRecordingChange(false);
-    };
-  }, [onShortcutRecordingChange, recordingAction]);
-
-  useEffect(() => {
-    if (!open || !recordingAction) {
-      return;
-    }
-
-    const action = recordingAction;
-
-    function onKeyDown(event: KeyboardEvent) {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (event.key === "Escape") {
-        setRecordingAction(null);
-        return;
-      }
-
-      const key = formatShortcutKey(event);
-      if (!key) {
-        toast.error(messages.settingsShortcutsInvalid, { id: "shortcut-remap" });
-        return;
-      }
-
-      const result = withReboundShortcut(shortcutBindings, action, key);
-      if (result.invalid) {
-        toast.error(messages.settingsShortcutsInvalid, { id: "shortcut-remap" });
-        return;
-      }
-
-      if (result.conflict) {
-        toast.error(
-          messages.settingsShortcutsConflict.replace(
-            "{action}",
-            getShortcutActionLabel(messages, result.conflict)
-          ),
-          { id: "shortcut-remap" }
-        );
-        return;
-      }
-
-      onShortcutBindingsChange(result.bindings);
-      setRecordingAction(null);
-    }
-
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown, true);
-    };
-  }, [messages, onShortcutBindingsChange, open, recordingAction, shortcutBindings]);
-
-  if (!open) {
-    return null;
-  }
-
-  const isEnglish = locale === "en";
-  const helpItems = [
-    areaTipMessage,
-    messages.tipColor,
-    messages.tipThumbnail,
-    messages.tipDoubleClick,
-    messages.tipZoom,
-    messages.tipDrag,
-    messages.tipInspectorScroll,
-    messages.tipInspectorSort,
-  ];
-  const tabs: Array<{ key: SettingsTab; label: string; icon: typeof Palette }> = [
-    { key: "appearance", label: messages.settingsAppearance, icon: Palette },
-    { key: "watchlist", label: messages.settingsWatchlist, icon: Star },
-    ...(!isMobile
-      ? [
-          { key: "shortcuts" as const, label: messages.settingsShortcuts, icon: Keyboard },
-          { key: "help" as const, label: messages.settingsHelp, icon: Info },
-        ]
-      : []),
-    ...(!isMobile ? [{ key: "webmcp" as const, label: messages.settingsWebmcp, icon: Bot }] : []),
-    { key: "project", label: messages.settingsProject, icon: ExternalLink },
-  ];
-  const themeLabels: Record<ThemeColorKey, string> = isEnglish
-    ? { green: "Green", red: "Red", blue: "Blue", violet: "Violet" }
-    : { green: "绿色", red: "红色", blue: "蓝色", violet: "紫色" };
-
-  return (
-    <div className="absolute inset-0 z-[10010] flex items-end justify-center bg-black/62 backdrop-blur-sm" role="dialog" aria-modal="true">
-      <button type="button" className="absolute inset-0" aria-label={messages.closeSheet} onClick={onClose} />
-      <section className="relative flex h-[92dvh] w-full flex-col overflow-hidden rounded-t-lg border border-b-0 border-border bg-card text-card-foreground shadow-[0_-24px_100px_rgba(0,0,0,0.48)]">
-        <div className="flex items-center justify-center pt-2">
-          <span className="h-1 w-10 rounded-full bg-muted-foreground/40" aria-hidden />
-        </div>
-        <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
-          <div className="min-w-0">
-            <h2 className="text-lg font-semibold leading-tight">{messages.settingsTitle}</h2>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{messages.settingsDescription}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={messages.closeSheet}
-            className="inline-flex size-9 shrink-0 items-center justify-center border border-border bg-background/70 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <X className="size-4" />
-          </button>
-        </header>
-
-        <div className="grid min-h-0 flex-1 grid-rows-[48px_minmax(0,1fr)] md:grid-cols-[168px_minmax(0,1fr)] md:grid-rows-1">
-          <nav className="flex h-12 min-h-12 gap-1 overflow-x-auto overflow-y-hidden border-b border-border bg-muted/20 px-2 py-1.5 md:h-auto md:min-h-0 md:flex-col md:overflow-x-visible md:border-b-0 md:border-r md:p-2">
-            {tabs.map((item) => {
-              const Icon = item.icon;
-              const active = tab === item.key;
-
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => onTabChange(item.key)}
-                  className={cn(
-                    "inline-flex h-9 shrink-0 items-center gap-2 border px-3 text-left text-sm font-medium leading-none transition-colors md:w-full",
-                    active
-                      ? "border-brand/60 bg-brand/15 text-foreground"
-                      : "border-transparent text-muted-foreground hover:border-border hover:bg-background/70 hover:text-foreground"
-                  )}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  <span className="whitespace-nowrap">{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-
-          <div className={cn("min-h-0 p-3 md:p-4", tab === "watchlist" ? "flex flex-col overflow-hidden" : "overflow-y-auto")}>
-            {tab === "appearance" && (
-              <div className="space-y-4 md:space-y-6">
-                <section>
-                  <h3 className="text-sm font-semibold">{messages.languageLabel}</h3>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onLocaleChange("zh")}
-                      aria-pressed={locale === "zh"}
-                      className={cn(
-                        "border px-3 py-2 text-left text-sm font-semibold transition-colors md:py-3",
-                        locale === "zh"
-                          ? "border-brand/70 bg-brand/15 text-foreground"
-                          : "border-border bg-background/70 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                    >
-                      {messages.languageZh}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onLocaleChange("en")}
-                      aria-pressed={locale === "en"}
-                      className={cn(
-                        "border px-3 py-2 text-left text-sm font-semibold transition-colors md:py-3",
-                        locale === "en"
-                          ? "border-brand/70 bg-brand/15 text-foreground"
-                          : "border-border bg-background/70 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                    >
-                      {messages.languageEn}
-                    </button>
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="text-sm font-semibold">{messages.displayMode}</h3>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onDisplayModeChange("light")}
-                      aria-pressed={displayMode === "light"}
-                      className={cn(
-                        "flex items-center gap-2 border px-3 py-2 text-left text-sm font-semibold transition-colors md:py-3",
-                        displayMode === "light"
-                          ? "border-brand/70 bg-brand/15 text-foreground"
-                          : "border-border bg-background/70 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                    >
-                      <Sun className="size-4 shrink-0" />
-                      {messages.lightMode}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDisplayModeChange("dark")}
-                      aria-pressed={displayMode === "dark"}
-                      className={cn(
-                        "flex items-center gap-2 border px-3 py-2 text-left text-sm font-semibold transition-colors md:py-3",
-                        displayMode === "dark"
-                          ? "border-brand/70 bg-brand/15 text-foreground"
-                          : "border-border bg-background/70 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                    >
-                      <Moon className="size-4 shrink-0" />
-                      {messages.darkMode}
-                    </button>
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="text-sm font-semibold">{messages.headerTrendStatsLabel}</h3>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onHeaderTrendStatsChange(false)}
-                      aria-pressed={!headerTrendStats}
-                      className={cn(
-                        "border px-3 py-2 text-left text-sm font-semibold transition-colors md:py-3",
-                        !headerTrendStats
-                          ? "border-brand/70 bg-brand/15 text-foreground"
-                          : "border-border bg-background/70 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                    >
-                      {messages.headerTrendStatsOff}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onHeaderTrendStatsChange(true)}
-                      aria-pressed={headerTrendStats}
-                      className={cn(
-                        "border px-3 py-2 text-left text-sm font-semibold transition-colors md:py-3",
-                        headerTrendStats
-                          ? "border-brand/70 bg-brand/15 text-foreground"
-                          : "border-border bg-background/70 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                    >
-                      {messages.headerTrendStatsOn}
-                    </button>
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="text-sm font-semibold">{messages.heatmapBordersLabel}</h3>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onHeatmapBordersChange(false)}
-                      aria-pressed={!heatmapBorders}
-                      className={cn(
-                        "border px-3 py-2 text-left text-sm font-semibold transition-colors md:py-3",
-                        !heatmapBorders
-                          ? "border-brand/70 bg-brand/15 text-foreground"
-                          : "border-border bg-background/70 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                    >
-                      {messages.heatmapBordersOff}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onHeatmapBordersChange(true)}
-                      aria-pressed={heatmapBorders}
-                      className={cn(
-                        "border px-3 py-2 text-left text-sm font-semibold transition-colors md:py-3",
-                        heatmapBorders
-                          ? "border-brand/70 bg-brand/15 text-foreground"
-                          : "border-border bg-background/70 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                    >
-                      {messages.heatmapBordersOn}
-                    </button>
-                  </div>
-                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                    {messages.heatmapBordersHint}
-                  </p>
-                </section>
-
-                <section>
-                  <h3 className="text-sm font-semibold">{messages.settingsRefreshIntervalLabel}</h3>
-                  <div className="mt-2 flex items-center gap-2">
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={minRefreshIntervalSeconds}
-                      max={maxRefreshIntervalSeconds}
-                      step={1}
-                      value={intervalDraft}
-                      onChange={(event) => setIntervalDraft(event.target.value)}
-                      onBlur={commitRefreshInterval}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.currentTarget.blur();
-                        }
-                      }}
-                      aria-label={messages.settingsRefreshIntervalLabel}
-                      className="w-24 border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground transition-colors outline-none focus:border-brand/70 focus:ring-2 focus:ring-brand/30 md:py-3"
-                    />
-                    <span className="text-xs text-muted-foreground">
-                      {messages.settingsRefreshIntervalUnit}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                    {messages.settingsRefreshIntervalHint.replace(
-                      "{min}",
-                      String(minRefreshIntervalSeconds)
-                    ).replace("{max}", String(maxRefreshIntervalSeconds))}
-                  </p>
-                </section>
-
-                {!isMobile && (
-                  <section>
-                    <h3 className="text-sm font-semibold">{messages.filterOpenModeLabel}</h3>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onFilterOpenModeChange("click")}
-                        aria-pressed={filterOpenMode === "click"}
-                        className={cn(
-                          "border px-3 py-2 text-left text-sm font-semibold transition-colors md:py-3",
-                          filterOpenMode === "click"
-                            ? "border-brand/70 bg-brand/15 text-foreground"
-                            : "border-border bg-background/70 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        )}
-                      >
-                        {messages.filterOpenModeClick}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onFilterOpenModeChange("hover")}
-                        aria-pressed={filterOpenMode === "hover"}
-                        className={cn(
-                          "border px-3 py-2 text-left text-sm font-semibold transition-colors md:py-3",
-                          filterOpenMode === "hover"
-                            ? "border-brand/70 bg-brand/15 text-foreground"
-                            : "border-border bg-background/70 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        )}
-                      >
-                        {messages.filterOpenModeHover}
-                      </button>
-                    </div>
-                  </section>
-                )}
-
-                <section>
-                  <h3 className="text-sm font-semibold">{messages.themeColor}</h3>
-                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {(Object.keys(themeColors) as ThemeColorKey[]).map((key) => (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => onThemeColorChange(key)}
-                        aria-pressed={themeColor === key}
-                        className={cn(
-                          "flex items-center gap-2 border px-3 py-2 text-sm font-medium transition-colors",
-                          themeColor === key
-                            ? "border-brand/70 bg-brand/15 text-foreground"
-                            : "border-border bg-background/70 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        )}
-                      >
-                        <span
-                          className="size-4 shrink-0 border border-white/20"
-                          style={{ backgroundColor: themeColors[key].swatch }}
-                        />
-                        {themeLabels[key]}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="text-sm font-semibold">{messages.priceColor}</h3>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onPriceColorModeChange("red-rise")}
-                      aria-pressed={priceColorMode === "red-rise"}
-                      className={cn(
-                        "border px-3 py-2 text-left text-sm transition-colors md:py-3",
-                        priceColorMode === "red-rise"
-                          ? "border-brand/70 bg-brand/15"
-                          : "border-border bg-background/70 hover:bg-muted"
-                      )}
-                    >
-                      <span className="font-semibold text-red-400">{messages.redRiseGreenFall}</span>
-                      <span className="mt-1 block text-xs text-muted-foreground">+2.4% / -1.8%</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onPriceColorModeChange("green-rise")}
-                      aria-pressed={priceColorMode === "green-rise"}
-                      className={cn(
-                        "border px-3 py-2 text-left text-sm transition-colors md:py-3",
-                        priceColorMode === "green-rise"
-                          ? "border-brand/70 bg-brand/15"
-                          : "border-border bg-background/70 hover:bg-muted"
-                      )}
-                    >
-                      <span className="font-semibold text-emerald-400">{messages.greenRiseRedFall}</span>
-                      <span className="mt-1 block text-xs text-muted-foreground">+2.4% / -1.8%</span>
-                    </button>
-                  </div>
-                </section>
-
-                <HeatThemeSettingsPanel
-                  messages={messages}
-                  locale={locale}
-                  displayMode={displayMode}
-                  priceColorMode={priceColorMode}
-                  heatThemeId={heatThemeId}
-                  customHeatThemes={customHeatThemes}
-                  activeHeatTheme={activeHeatTheme}
-                  onHeatThemeIdChange={onHeatThemeIdChange}
-                  onCustomHeatThemesChange={onCustomHeatThemesChange}
-                />
-              </div>
-            )}
-
-            {tab === "watchlist" && (
-              <WatchlistManager
-                messages={messages}
-                locale={locale}
-                items={watchlist}
-                maxCount={watchlistMaxCount}
-                active={open && tab === "watchlist"}
-                changeTextColor={(changePct) =>
-                  getChangeTextColor(activeHeatTheme, changePct, priceColorMode, displayMode)
-                }
-                onAdd={onWatchlistAdd}
-                onRemove={onWatchlistRemove}
-                onClear={onWatchlistClear}
-                onImportText={onWatchlistImportText}
-                onSyncReplace={onWatchlistSyncReplace}
-                syncIntervalSec={emSyncIntervalSec}
-                onSyncIntervalChange={onEmSyncIntervalChange}
-              />
-            )}
-
-            {tab === "shortcuts" && (
-              <section className="space-y-4">
-                <div>
-                  <h3 className="text-sm font-semibold">{messages.settingsShortcuts}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                    {messages.settingsShortcutsIntro}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  {shortcutActionIds.map((action) => {
-                    const active = recordingAction === action;
-                    return (
-                      <button
-                        key={action}
-                        type="button"
-                        onClick={() =>
-                          setRecordingAction((current) => (current === action ? null : action))
-                        }
-                        className={cn(
-                          "flex w-full items-center justify-between gap-3 border px-3 py-2.5 text-left transition-colors",
-                          active
-                            ? "border-brand/70 bg-brand/15"
-                            : "border-border bg-background/70 hover:bg-muted"
-                        )}
-                      >
-                        <span className="min-w-0 text-sm font-medium text-foreground">
-                          {getShortcutActionLabel(messages, action)}
-                        </span>
-                        <span
-                          className={cn(
-                            "inline-flex min-w-10 shrink-0 items-center justify-center border px-2 py-1 font-mono text-xs font-semibold",
-                            active
-                              ? "border-brand/50 bg-background/80 text-foreground"
-                              : "border-border bg-muted/40 text-muted-foreground"
-                          )}
-                        >
-                          {active
-                            ? messages.settingsShortcutsRecording
-                            : formatShortcutLabel(shortcutBindings[action])}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRecordingAction(null);
-                    onShortcutBindingsChange({ ...defaultShortcutBindings });
-                  }}
-                  className="border border-border bg-background/70 px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  {messages.settingsShortcutsReset}
-                </button>
-              </section>
-            )}
-
-            {tab === "help" && (
-              <div className="space-y-6">
-                <section>
-                  <h3 className="text-sm font-semibold">{messages.helpTitle}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{messages.helpIntro}</p>
-                  <div className="mt-4 space-y-2">
-                    {helpItems.map((item) => (
-                      <div
-                        key={item}
-                        className="border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground"
-                      >
-                        {item.replace(/^·\s*/, "")}
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="text-sm font-semibold">{messages.helpShortcutsTitle}</h3>
-                  <div className="mt-3 overflow-hidden border border-border">
-                    {shortcutActionIds.map((action, index) => (
-                      <div
-                        key={action}
-                        className={cn(
-                          "flex items-center justify-between gap-3 bg-background/70 px-3 py-2 text-sm",
-                          index > 0 && "border-t border-border"
-                        )}
-                      >
-                        <span className="min-w-0 text-muted-foreground">
-                          {getShortcutActionLabel(messages, action)}
-                        </span>
-                        <span className="inline-flex min-w-8 shrink-0 items-center justify-center border border-border bg-muted/40 px-2 py-0.5 font-mono text-xs font-semibold text-foreground">
-                          {formatShortcutLabel(shortcutBindings[action])}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onTabChange("shortcuts")}
-                    className="mt-3 border border-border bg-background/70 px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  >
-                    {messages.helpShortcutsCta}
-                  </button>
-                </section>
-              </div>
-            )}
-
-            {tab === "webmcp" && (
-              <div className="space-y-5">
-                <section>
-                  <div className="flex items-start gap-3">
-                    <span className="inline-flex size-9 shrink-0 items-center justify-center border border-brand/45 bg-brand/12 text-brand">
-                      <Bot className="size-4" />
-                    </span>
-                    <div>
-                      <h3 className="text-sm font-semibold">{messages.webmcpTitle}</h3>
-                      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{messages.webmcpIntro}</p>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="border border-border bg-background/70 p-3.5">
-                  <h3 className="text-sm font-semibold">{messages.webmcpChatGPTTitle}</h3>
-                  <ol className="mt-3 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                    {[messages.webmcpChatGPTStep1, messages.webmcpChatGPTStep2, messages.webmcpChatGPTStep3].map(
-                      (step, index) => (
-                        <li key={step} className="flex items-start gap-2">
-                          <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-brand/15 text-[11px] font-semibold text-brand">
-                            {index + 1}
-                          </span>
-                          <span>{step}</span>
-                        </li>
-                      )
-                    )}
-                  </ol>
-                  <a
-                    href="https://help.openai.com/en/articles/20001423-using-site-tools-in-the-chatgpt-desktop-app"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-brand hover:text-brand/80"
-                  >
-                    {isEnglish ? "OpenAI Site tools guide" : "OpenAI Site tools 使用说明"}
-                    <ExternalLink className="size-3" />
-                  </a>
-                </section>
-
-                <section>
-                  <h3 className="text-sm font-semibold">{isEnglish ? "Try these prompts" : "可以直接这样说"}</h3>
-                  <div className="mt-3 space-y-2">
-                    {[messages.webmcpPromptState, messages.webmcpPromptRanking, messages.webmcpPromptWatchlist, messages.webmcpPromptTheme].map(
-                      (prompt) => (
-                        <button
-                          type="button"
-                          key={prompt}
-                          onClick={() => void copyWebmcpPrompt(prompt)}
-                          title={copiedWebmcpPrompt === prompt ? messages.webmcpPromptCopied : messages.webmcpCopyPrompt}
-                          aria-label={copiedWebmcpPrompt === prompt ? messages.webmcpPromptCopied : messages.webmcpCopyPrompt}
-                          className="group flex w-full items-start justify-between gap-3 border border-border bg-muted/20 px-3 py-2.5 text-left transition-colors hover:border-brand/50 hover:bg-brand/8"
-                        >
-                          <span className="min-w-0 font-mono text-xs leading-relaxed text-foreground">{prompt}</span>
-                          <span className="inline-flex shrink-0 items-center gap-1 pt-0.5 text-[10px] font-semibold text-muted-foreground group-hover:text-brand">
-                            {copiedWebmcpPrompt === prompt ? <Check className="size-3" /> : <Copy className="size-3" />}
-                            {copiedWebmcpPrompt === prompt ? messages.webmcpPromptCopied : messages.webmcpCopyPrompt}
-                          </span>
-                        </button>
-                      )
-                    )}
-                  </div>
-                </section>
-
-                <section className="space-y-3">
-                  <div className="border border-border bg-background/70 p-3.5">
-                    <h3 className="text-sm font-semibold">{messages.webmcpChromeTitle}</h3>
-                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{messages.webmcpChromeDescription}</p>
-                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
-                      <a
-                        href="https://developer.chrome.com/docs/ai/webmcp"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand hover:text-brand/80"
-                      >
-                        {messages.webmcpChromeDocsLink}
-                        <ExternalLink className="size-3" />
-                      </a>
-                      <a
-                        href="https://chromewebstore.google.com/detail/webmcp-model-context-tool/gbpdfapgefenggkahomfgkhfehlcenpd"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand hover:text-brand/80"
-                      >
-                        {messages.webmcpInspectorLink}
-                        <ExternalLink className="size-3" />
-                      </a>
-                    </div>
-                  </div>
-                  <div className="border border-dashed border-border bg-muted/15 p-3.5">
-                    <h3 className="text-sm font-semibold">{messages.webmcpBrowserTitle}</h3>
-                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{messages.webmcpBrowserDescription}</p>
-                  </div>
-                </section>
-              </div>
-            )}
-
-            {tab === "project" && (
-              <div className="space-y-4">
-                <section className="border border-border bg-background/70 p-3.5">
-                  <div className="flex items-start gap-3">
-                    <span className="inline-flex size-9 shrink-0 items-center justify-center border border-border bg-muted/40 text-foreground">
-                      <GitHubMark className="size-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-sm font-semibold">{messages.githubProject}</h3>
-                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        {messages.githubProjectDescription}
-                      </p>
-                      <a
-                        href={githubProjectUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-semibold text-brand transition-colors hover:text-brand/80"
-                      >
-                        github.com/wenyuanw/a-share-heatmap
-                        <ExternalLink className="size-3.5 opacity-80" />
-                      </a>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="border border-border bg-background/70 p-3.5">
-                  <div className="flex items-start gap-3">
-                    <span className="inline-flex size-9 shrink-0 items-center justify-center border border-border bg-muted/40 text-foreground">
-                      <Mail className="size-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-sm font-semibold">{messages.projectAuthorTitle}</h3>
-                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        {messages.projectAuthorDescription}
-                      </p>
-                      <a
-                        href={authorMailto}
-                        className="mt-3 inline-flex items-center gap-1.5 font-mono text-[12px] font-semibold text-foreground transition-colors hover:text-brand"
-                      >
-                        {messages.projectAuthorEmail}
-                      </a>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="relative overflow-hidden border border-dashed border-brand/45 bg-brand/8 p-3.5">
-                  <div
-                    className="pointer-events-none absolute -right-6 -top-6 size-24 rotate-12 border border-brand/20 bg-brand/10"
-                    aria-hidden
-                  />
-                  <div className="relative flex items-start gap-3">
-                    <span className="inline-flex size-9 shrink-0 items-center justify-center border border-brand/40 bg-brand/15 text-brand">
-                      <Megaphone className="size-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm font-semibold text-foreground">{messages.projectAdTitle}</h3>
-                        <span className="border border-brand/40 bg-brand/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-brand">
-                          OPEN
-                        </span>
-                      </div>
-                      <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                        {messages.projectAdDescription}
-                      </p>
-                      <a
-                        href={`${authorMailto}?subject=${encodeURIComponent(
-                          locale === "zh" ? "广告位招租咨询" : "Ad slot inquiry"
-                        )}`}
-                        className="mt-3 inline-flex items-center gap-1.5 border border-brand/50 bg-brand/15 px-2.5 py-1.5 text-[12px] font-semibold text-foreground transition-colors hover:bg-brand/25"
-                      >
-                        {messages.projectAdCta}
-                        <Mail className="size-3.5 opacity-80" />
-                      </a>
-                    </div>
-                  </div>
-                </section>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-}
+const SettingsDrawer = dynamic(
+  () => import("@/components/heatmap/settings-drawer").then((module) => module.SettingsDrawer),
+  { ssr: false }
+);
 
 export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messages?: HeatmapMessages }) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -4524,6 +286,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
   const [initialSnapshot] = useState<TreemapResponse | null>(() => getBundledSnapshotTreemap());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const periodDataUnavailable = error === periodDataUnavailableCode;
   const [refreshRequestId, setRefreshRequestId] = useState(0);
   const [updatedAt, setUpdatedAt] = useState("");
   // Set once the Canvas has painted the bundled sample — from then on the sample
@@ -4590,6 +353,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
   const lastBoardRectsRef = useRef<BoardRect[]>([]);
   const lastSubBoardRectsRef = useRef<SubBoardRect[]>([]);
   const quoteStreamRef = useRef<{ key: string; controller: AbortController } | null>(null);
+  const marketSummaryControllerRef = useRef<AbortController | null>(null);
   const pendingQuoteCommitRef = useRef<PendingQuoteCommit | null>(null);
   const quoteCommitTimerRef = useRef<number | null>(null);
   const quoteCommitFrameRef = useRef<number | null>(null);
@@ -5086,6 +850,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
         });
         const response = await fetch(`/api/heatmap/treemap?${params.toString()}`);
         if (!response.ok) {
+          if (response.status === 503) throw new Error(periodDataUnavailableCode);
           throw new Error(messages.errorLoad);
         }
 
@@ -5103,6 +868,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
 
       const response = await fetch(`/api/heatmap/treemap?market=${nextMarket}&period=${nextPeriod}`);
       if (!response.ok) {
+        if (response.status === 503) throw new Error(periodDataUnavailableCode);
         throw new Error(messages.errorLoad);
       }
 
@@ -5207,11 +973,13 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
               setUpdatedAt(event.updatedAt);
             }
             setDataSource(event.source);
-            setError(null);
+            setError((current) => current === periodDataUnavailableCode ? current : null);
             return;
           }
 
-          throw new Error(event.message);
+          throw new Error(
+            event.message === periodDataUnavailableCode ? periodDataUnavailableCode : messages.errorLoad
+          );
         });
 
         if (!completed && !controller.signal.aborted) {
@@ -5237,7 +1005,12 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
   );
 
   const fetchMarketSummaries = useCallback(async (nextPeriod: HeatmapPeriodKey) => {
-    const response = await fetch(`/api/heatmap/overview?period=${nextPeriod}`);
+    marketSummaryControllerRef.current?.abort();
+    const controller = new AbortController();
+    marketSummaryControllerRef.current = controller;
+    const response = await fetch(`/api/heatmap/overview?period=${nextPeriod}`, {
+      signal: controller.signal,
+    });
     if (!response.ok) {
       throw new Error(messages.errorLoad);
     }
@@ -5253,7 +1026,9 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
       };
     }
 
-    setMarketSummaries(next);
+    if (!controller.signal.aborted) {
+      setMarketSummaries(next);
+    }
   }, [messages.errorLoad]);
 
   useEffect(() => {
@@ -5355,6 +1130,13 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
 
   const quoteQueryKey = `${market}:${period}:${isWatchlist ? watchlistCodes.join(",") : ""}`;
 
+  // Overview includes every market, so switching markets or watchlist entries
+  // must retain it. Only a period change invalidates these values.
+  useEffect(() => {
+    setMarketSummaries({});
+    return () => marketSummaryControllerRef.current?.abort();
+  }, [period]);
+
   useEffect(() => {
     quoteStreamRef.current?.controller.abort();
     quoteStreamRef.current = null;
@@ -5382,6 +1164,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
 
     async function loadTreemap() {
       setError(null);
+      setTreemapData((current) => current?.period === period ? current : null);
       setHoveredStockCode(null);
       setHoveredBoardName(null);
       setHoveredBoardTitleName(null);
@@ -5404,9 +1187,9 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
 
       try {
         await fetchTreemap(market, period, watchlistCodes);
-      } catch {
+      } catch (error) {
         if (!cancelled) {
-          setError(messages.errorLoad);
+          setError(error instanceof Error ? error.message : messages.errorLoad);
         }
       } finally {
         if (!cancelled) {
@@ -5429,8 +1212,8 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
       }
       try {
         await fetchProgressiveQuotes(market, period, watchlistCodes, refreshRequestId);
-      } catch {
-        setError(messages.errorLoad);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : messages.errorLoad);
       }
     }, [fetchProgressiveQuotes, market, messages.errorLoad, period, preferencesReady, refreshRequestId, watchlistCodes]),
     refreshIntervalSeconds * 1000
@@ -5539,6 +1322,13 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
     setFiltersOpen(false);
     setSettingsTab("watchlist");
     setSettingsOpen(true);
+  }, []);
+
+  const openRewardSettings = useCallback(() => {
+    setFiltersOpen(false);
+    setSettingsTab("project");
+    setSettingsOpen(true);
+    setSidebarOpen(false);
   }, []);
 
   const addWatchlistItem = useCallback(
@@ -5752,7 +1542,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
   // Before live data arrives, fall back to the bundled sample snapshot so the canvas
   // always has a full heatmap to paint — even on the very first render.
   const visibleTreemapData = useMemo<TreemapResponse | null>(() => {
-    if (!treemapData) {
+    if (!treemapData || treemapData.period !== period) {
       return initialSnapshot;
     }
 
@@ -5780,11 +1570,11 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
       for (const stock of selectedStocks) {
         const changePct = settledQuotes[stock.code]?.changePct ?? stock.changePct;
 
-        if (changePct > flatThreshold) {
+        if (changePct !== null && changePct > flatThreshold) {
           advanceCount += 1;
-        } else if (changePct < -flatThreshold) {
+        } else if (changePct !== null && changePct < -flatThreshold) {
           declineCount += 1;
-        } else {
+        } else if (changePct !== null) {
           flatCount += 1;
         }
 
@@ -5841,10 +1631,10 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
     result = applyTrendFilter(result);
     result = applyChangeRangeFilter(result);
     return result;
-  }, [boardFilter, changeRangeFilter, initialSnapshot, settledQuotes, trendFilter, treemapData]);
+  }, [boardFilter, changeRangeFilter, initialSnapshot, period, settledQuotes, trendFilter, treemapData]);
 
   const marketOverview = useMemo<MarketOverview | null>(() => {
-    if (!visibleTreemapData) {
+    if (!visibleTreemapData || periodDataUnavailable || visibleTreemapData.period !== period) {
       return null;
     }
 
@@ -5856,7 +1646,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
       turnoverPreviousAmount: visibleTreemapData.summary.turnoverPreviousAmount,
       turnoverDelta: visibleTreemapData.summary.turnoverDelta,
     };
-  }, [visibleTreemapData]);
+  }, [periodDataUnavailable, period, visibleTreemapData]);
 
   const sizedTreemapData = useMemo(
     () => (visibleTreemapData ? applySizeModeToTreemapData(visibleTreemapData, settledQuotes, sizeMode) : null),
@@ -6400,12 +2190,21 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
     context.translate(view.x, view.y);
     context.scale(view.scale, view.scale);
 
+    // Skip off-screen shapes and text; keep a margin for selection/border strokes.
+    const viewportBounds = getCanvasViewportBounds(canvasSize.width, canvasSize.height, {
+      x: view.x,
+      y: view.y,
+      scale: view.scale,
+    });
+
     for (const board of layout.boardRects) {
+      if (!intersectsBounds(board, viewportBounds)) continue;
       context.fillStyle = heatmapCanvasTheme.boardFill;
       context.fillRect(board.x, board.y, board.width, board.height);
     }
 
     for (const subBoard of layout.subBoardRects) {
+      if (!intersectsBounds(subBoard, viewportBounds)) continue;
       const stats =
         sectorVisualStats.subBoards.get(sectorStatsKey(subBoard.boardName, subBoard.name)) ?? subBoard;
       context.fillStyle = thumbnailMode
@@ -6416,6 +2215,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
 
     if (!thumbnailMode) {
       for (const stock of layout.stockRects) {
+        if (!intersectsBounds(stock, viewportBounds)) continue;
         const quote = quotes[stock.code];
         const changePct = quote?.changePct ?? stock.changePct;
         context.fillStyle = getHeatColor(activeHeatTheme, changePct, priceColorMode, displayMode);
@@ -6443,6 +2243,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
     }
 
     for (const subBoard of layout.subBoardRects) {
+      if (!intersectsBounds(subBoard, viewportBounds)) continue;
       const stats =
         sectorVisualStats.subBoards.get(sectorStatsKey(subBoard.boardName, subBoard.name)) ?? subBoard;
       const isActiveSubBoard =
@@ -6501,6 +2302,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
     }
 
     for (const board of layout.boardRects) {
+      if (!intersectsBounds(board, viewportBounds)) continue;
       const stats = sectorVisualStats.boards.get(board.name) ?? board;
       const isActiveBoard = activeBoardName === board.name;
       const isTitleHovered = hoveredBoardTitleName === board.name;
@@ -7318,8 +3120,8 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
           : `${messages.title}｜${getPeriodLabel(messages, period)} ${formatShareTimestamp(updatedAt)}`;
       const shareUrlLight = isLightMode ? "rgba(15, 23, 42, 0.96)" : "rgba(247, 250, 252, 0.98)";
       const shareUrlParts: { text: string; fillStyle: string }[] = [
-        { text: "map.wenyuanw", fillStyle: shareUrlLight },
-        { text: ".me", fillStyle: "#22c55e" },
+        { text: "dapan", fillStyle: shareUrlLight },
+        { text: ".app", fillStyle: "#22c55e" },
       ];
 
       const headerY = topPadding / 2;
@@ -7674,13 +3476,17 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
   const lastUpdatedText =
     // A freshly-loaded archival snapshot has a fixed old timestamp; label it clearly so
     // the clock never misreads as stale data once live quotes have streamed in.
-    dataSource === "fallback"
-      ? messages.sampleDataLabel
-      : updatedAt
-        ? new Date(updatedAt).toLocaleTimeString()
-        : "--:--:--";
+    periodDataUnavailable || (period !== "day" && treemapData?.period !== period)
+      ? "--:--:--"
+      : dataSource === "fallback"
+        ? messages.sampleDataLabel
+        : updatedAt
+          ? new Date(updatedAt).toLocaleTimeString()
+          : "--:--:--";
   const watchlistChangePct =
-    isWatchlist && treemapData && treemapData.stockCount > 0 ? treemapData.summary.indexChangePct : undefined;
+    !periodDataUnavailable && isWatchlist && treemapData?.period === period && treemapData.stockCount > 0
+      ? treemapData.summary.indexChangePct
+      : undefined;
 
   return (
     <div
@@ -7731,12 +3537,13 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
             >
               <div className={cn("flex items-center justify-between gap-2 border-b border-border px-2 py-1.5 sm:px-2.5", isEnglish && "py-1")}>
                 <div className="flex min-w-0 items-center gap-2">
-                  <img
-                    src="/icon.svg"
-                    alt=""
-                    className="size-7 shrink-0"
-                    decoding="async"
-                  />
+                  <RewardTipTrigger
+                    messages={messages}
+                    onOpen={openRewardSettings}
+                    className="rounded transition-opacity hover:opacity-85"
+                  >
+                    <img src="/icon.svg" alt="" className="size-7 shrink-0" decoding="async" />
+                  </RewardTipTrigger>
                   <h2
                     className={cn(
                       "min-w-0 truncate whitespace-nowrap font-semibold leading-tight tracking-[0.01em]",
@@ -7779,7 +3586,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
               </div>
               <div className={cn("space-y-1", isEnglish && "space-y-0.5")}>
                 {marketOptions.map((option) => {
-                  const summary = marketSummaries[option];
+                  const summary = periodDataUnavailable ? undefined : marketSummaries[option];
                   const isActive = market === option;
 
                   return (
@@ -8446,15 +4253,25 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
               <div
                 className={cn(
                   "absolute inset-x-3 top-3 z-40 flex items-center justify-between gap-3 border px-3 py-2.5 text-sm shadow-lg backdrop-blur-md sm:left-4 sm:right-4 sm:top-4",
+                  periodDataUnavailable &&
+                    "inset-0 flex-col justify-center border-0 bg-background/95 text-center sm:inset-0",
                   isLightMode
                     ? "border-amber-200 bg-white/94 text-slate-800"
-                    : "border-amber-400/30 bg-[#17130d]/92 text-slate-100"
+                    : "border-amber-400/30 bg-[#17130d]/92 text-slate-100",
+                  periodDataUnavailable &&
+                    (isLightMode ? "bg-white/95" : "bg-[#151a21]/95")
                 )}
                 role="alert"
               >
                 <div className="min-w-0">
-                  <p className="font-medium text-amber-700 dark:text-amber-300">{error}</p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">{messages.refreshDataHint}</p>
+                  <p className="font-medium text-amber-700 dark:text-amber-300">
+                    {periodDataUnavailable ? messages.periodDataUnavailable : error}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {periodDataUnavailable
+                      ? messages.periodDataUnavailableHint
+                      : messages.refreshDataHint}
+                  </p>
                 </div>
                 <Button
                   variant="outline"
@@ -8545,6 +4362,17 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
                 >
                   {isLightMode ? <Moon className="size-3.5" /> : <Sun className="size-3.5" />}
                 </button>
+                <RewardTipTrigger
+                  messages={messages}
+                  onOpen={openRewardSettings}
+                  side="top"
+                  className={cn(
+                    "size-7 rounded-full text-muted-foreground focus-visible:text-brand",
+                    isLightMode
+                      ? "hover:bg-muted focus-visible:bg-muted"
+                      : "text-slate-400 hover:bg-white/5 focus-visible:bg-white/5"
+                  )}
+                />
                 <a
                   href={githubProjectUrl}
                   target="_blank"
@@ -8559,7 +4387,7 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
                   )}
                 >
                   <GitHubMark className="size-3.5 shrink-0 opacity-80" />
-                  <span className="min-w-0 truncate">map.wenyuanw.me</span>
+                  <span className="min-w-0 truncate">dapan.app</span>
                 </a>
               </div>
 
@@ -8819,46 +4647,48 @@ export function MarketHeatmap({ locale: initialLocale }: { locale: Locale; messa
         />
       </FilterPopover>
 
-      <SettingsDrawer
-        open={settingsOpen}
-        tab={settingsTab}
-        messages={messages}
-        locale={locale}
-        displayMode={displayMode}
-        filterOpenMode={filterOpenMode}
-        headerTrendStats={headerTrendStats}
-        heatmapBorders={heatmapBorders}
-        themeColor={themeColor}
-        priceColorMode={priceColorMode}
-        heatThemeId={heatThemeId}
-        customHeatThemes={customHeatThemes}
-        activeHeatTheme={activeHeatTheme}
-        shortcutBindings={shortcutBindings}
-        watchlist={watchlist}
-        areaTipMessage={areaTipMessage}
-        onClose={() => setSettingsOpen(false)}
-        onTabChange={setSettingsTab}
-        onLocaleChange={setLocale}
-        onDisplayModeChange={setDisplayMode}
-        onFilterOpenModeChange={setFilterOpenMode}
-        onHeaderTrendStatsChange={setHeaderTrendStats}
-        onHeatmapBordersChange={handleHeatmapBordersChange}
-        refreshIntervalSeconds={refreshIntervalSeconds}
-        onRefreshIntervalChange={setRefreshIntervalSeconds}
-        onThemeColorChange={setThemeColor}
-        onPriceColorModeChange={setPriceColorMode}
-        onHeatThemeIdChange={setHeatThemeId}
-        onCustomHeatThemesChange={setCustomHeatThemes}
-        onShortcutBindingsChange={setShortcutBindings}
-        onShortcutRecordingChange={setShortcutRecording}
-        onWatchlistAdd={addWatchlistItem}
-        onWatchlistRemove={removeWatchlistItem}
-        onWatchlistClear={clearWatchlist}
-        onWatchlistImportText={importWatchlistFromText}
-        onWatchlistSyncReplace={(synced) => setWatchlist(synced.slice(0, watchlistMaxCount))}
-        emSyncIntervalSec={emSyncIntervalSec}
-        onEmSyncIntervalChange={handleEmSyncIntervalChange}
-      />
+      {settingsOpen && (
+          <SettingsDrawer
+          open={settingsOpen}
+          tab={settingsTab}
+          messages={messages}
+          locale={locale}
+          displayMode={displayMode}
+          filterOpenMode={filterOpenMode}
+          headerTrendStats={headerTrendStats}
+          heatmapBorders={heatmapBorders}
+          themeColor={themeColor}
+          priceColorMode={priceColorMode}
+          heatThemeId={heatThemeId}
+          customHeatThemes={customHeatThemes}
+          activeHeatTheme={activeHeatTheme}
+          shortcutBindings={shortcutBindings}
+          watchlist={watchlist}
+          areaTipMessage={areaTipMessage}
+          onClose={() => setSettingsOpen(false)}
+          onTabChange={setSettingsTab}
+          onLocaleChange={setLocale}
+          onDisplayModeChange={setDisplayMode}
+          onFilterOpenModeChange={setFilterOpenMode}
+          onHeaderTrendStatsChange={setHeaderTrendStats}
+          onHeatmapBordersChange={handleHeatmapBordersChange}
+          refreshIntervalSeconds={refreshIntervalSeconds}
+          onRefreshIntervalChange={setRefreshIntervalSeconds}
+          onThemeColorChange={setThemeColor}
+          onPriceColorModeChange={setPriceColorMode}
+          onHeatThemeIdChange={setHeatThemeId}
+          onCustomHeatThemesChange={setCustomHeatThemes}
+          onShortcutBindingsChange={setShortcutBindings}
+          onShortcutRecordingChange={setShortcutRecording}
+          onWatchlistAdd={addWatchlistItem}
+          onWatchlistRemove={removeWatchlistItem}
+          onWatchlistClear={clearWatchlist}
+          onWatchlistImportText={importWatchlistFromText}
+          onWatchlistSyncReplace={(synced) => setWatchlist(synced.slice(0, watchlistMaxCount))}
+          emSyncIntervalSec={emSyncIntervalSec}
+          onEmSyncIntervalChange={handleEmSyncIntervalChange}
+          />
+      )}
 
       {sharePreview && (
         <div className="absolute inset-0 z-[10020] flex items-center justify-center bg-black/72 p-2 backdrop-blur-sm sm:p-3">

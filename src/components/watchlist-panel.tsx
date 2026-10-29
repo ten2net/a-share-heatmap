@@ -12,7 +12,7 @@ import {
 } from "react";
 import { Check, CloudDownload, Download, Loader2, Plus, RefreshCw, Search, Sparkles, Upload, X } from "lucide-react";
 
-import { WatchlistAiDialog } from "@/components/watchlist-ai-dialog";
+import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
 import type { HeatmapMessages, Locale } from "@/lib/i18n";
 import { buildWatchlistExport, type WatchlistExchange, type WatchlistItem } from "@/lib/watchlist";
@@ -25,7 +25,7 @@ import {
   syncFromEmGroup,
   type EmSyncResult,
 } from "@/lib/em-watchlist-sync";
-import { isWatchlistAiConfigured, loadWatchlistAiConfig } from "@/lib/watchlist-ai";
+import { isWatchlistAiConfigured, loadWatchlistAiConfig } from "@/lib/watchlist-ai-config";
 import { toast } from "sonner";
 
 type StockSearchItem = {
@@ -37,6 +37,11 @@ type StockSearchItem = {
 };
 
 type QuoteMap = Record<string, { price: number; changePct: number; turnoverAmount: number }>;
+
+const WatchlistAiDialog = dynamic(
+  () => import("@/components/watchlist-ai-dialog").then((module) => module.WatchlistAiDialog),
+  { ssr: false }
+);
 
 const searchDebounceMs = 180;
 
@@ -739,14 +744,16 @@ export function WatchlistManager({
         />
       </section>
 
-      <WatchlistAiDialog
-        open={aiDialogOpen}
-        messages={messages}
-        locale={locale}
-        items={items}
-        onAdd={onAdd}
-        onClose={() => setAiDialogOpen(false)}
-      />
+      {aiDialogOpen && (
+        <WatchlistAiDialog
+          open={aiDialogOpen}
+          messages={messages}
+          locale={locale}
+          items={items}
+          onAdd={onAdd}
+          onClose={() => setAiDialogOpen(false)}
+        />
+      )}
     </div>
   );
 }

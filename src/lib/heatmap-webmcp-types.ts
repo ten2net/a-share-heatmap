@@ -5,6 +5,7 @@ import type {
   HeatmapStockNode,
   TreemapResponse,
 } from "@/lib/market-heatmap";
+import { periodDataUnavailableCode } from "@/lib/market-heatmap";
 import type { WatchlistItem } from "@/lib/watchlist";
 import type { HeatTheme } from "@/lib/heatmap-themes";
 
@@ -76,8 +77,16 @@ export type HeatmapWebMcpContext = {
   actionsRef: { current: HeatmapWebMcpActions };
 };
 
+export function getCurrentTreemapData(context: HeatmapWebMcpContext) {
+  const state = context.stateRef.current;
+  if (state.error === periodDataUnavailableCode) {
+    return null;
+  }
+  return [state.visibleTreemapData, state.treemapData].find((candidate) => candidate?.period === state.period) ?? null;
+}
+
 export function getCurrentTreemapStocks(context: HeatmapWebMcpContext) {
-  const data = context.stateRef.current.visibleTreemapData ?? context.stateRef.current.treemapData;
+  const data = getCurrentTreemapData(context);
   if (!data) {
     return [];
   }
@@ -98,10 +107,10 @@ export function getCurrentTreemapStocks(context: HeatmapWebMcpContext) {
 
 export function getDataFreshness(context: HeatmapWebMcpContext) {
   const state = context.stateRef.current;
-  const data = state.visibleTreemapData ?? state.treemapData;
+  const data = getCurrentTreemapData(context);
   return {
-    updatedAt: state.updatedAt || data?.updatedAt || "",
-    source: state.dataSource ?? data?.source ?? null,
+    updatedAt: data ? state.updatedAt || data.updatedAt : "",
+    source: data ? state.dataSource ?? data.source : null,
     loading: state.loading,
   };
 }

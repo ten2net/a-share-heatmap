@@ -2,6 +2,7 @@
   "name": "a-share-heatmap",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.27.1",
   "description": "A 股市场热力图：用一张可交互的市场云图观察 A 股全市场涨跌、板块轮动和权重分布。",
   "scripts": {
     "dev": "next dev",
@@ -9,11 +10,15 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "sync:supporters": "node scripts/sync-supporters.mjs",
     "refresh:data": "node scripts/refresh-market-data.mjs",
     "check:data": "node scripts/refresh-market-data.mjs --check"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.31",
+    "@radix-ui/react-tooltip": "^1.4.1",
     "@vercel/analytics": "^2.0.1",
     "ai": "^7.0.68",
     "clsx": "^2.1.1",
@@ -33,9 +38,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
     "tailwindcss": "^4",
-    "typescript": "^5"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": []
+    "typescript": "^5",
+    "vitest": "^5.0.1"
   }
 }

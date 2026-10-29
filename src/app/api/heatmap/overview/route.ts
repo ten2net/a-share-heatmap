@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getOverviewData, isHeatmapPeriodKey } from "@/lib/market-heatmap";
+import { getOverviewData, isHeatmapPeriodKey, PeriodDataUnavailableError } from "@/lib/market-heatmap";
 
 export const maxDuration = 60;
 
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
         success: false,
         message: error instanceof Error ? error.message : "Failed to load overview data",
       },
-      { status: 502 }
+      { status: error instanceof PeriodDataUnavailableError ? 503 : 502 }
     );
   }
 }
