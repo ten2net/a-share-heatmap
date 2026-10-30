@@ -120,6 +120,7 @@ async function main() {
       changePct: finiteNumber(row.f3, 0),
       totalMarketCap,
       floatMarketCap,
+      turnoverRate: finiteNumber(row.f8, previousStock?.turnoverRate ?? 0),
     };
 
     stocksByCode.set(code, stock);

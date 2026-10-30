@@ -39,6 +39,7 @@ type RemoteQuoteValue = {
   price: number;
   changes: Partial<Record<HeatmapPeriodKey, number>>;
   turnoverAmount: number;
+  turnoverRate?: number;
 };
 
 type QuoteSnapshot = {
@@ -739,9 +740,15 @@ function parseSinaQuoteBatch(rawText: string) {
   };
 }
 
-function parseTencentQuoteBatch(rawText: string) {
+export function parseTencentQuoteBatch(rawText: string): {
+  updatedAt: string;
+  quotes: Record<string, RemoteQuoteValue>;
+  names: Record<string, string>;
+  stocks: StockSnapshot[];
+} {
   const quotes: Record<string, RemoteQuoteValue> = {};
   const names: Record<string, string> = {};
+  const stocks: StockSnapshot[] = [];
   let updatedAt = "";
   const pattern = /v_((?:sh|sz|bj)\d{6})="([^"]*)";/g;
 
@@ -769,6 +776,8 @@ function parseTencentQuoteBatch(rawText: string) {
     const monthChange = toFiniteNumber(fields[70]);
     const yearChange = toFiniteNumber(fields[62]);
     const turnoverWan = toFiniteNumber(fields[57]) ?? toFiniteNumber(fields[37]);
+    // Tencent field 38 is the turnover rate in percent; keep missing values undefined.
+    const turnoverRate = toFiniteNumber(fields[38]) ?? undefined;
     const timestamp = fields[30];
 
     quotes[code] = {
@@ -780,8 +789,26 @@ function parseTencentQuoteBatch(rawText: string) {
         ...(yearChange !== null && { year: yearChange }),
       },
       turnoverAmount: turnoverWan !== null ? turnoverWan * 10_000 : 0,
+      turnoverRate,
     };
     names[code] = fields[1]?.trim() || code;
+
+    const baselineStock = baselineStockByCode.get(code);
+    if (baselineStock) {
+      stocks.push({
+        code: baselineStock.code,
+        exchange: baselineStock.exchange,
+        name: baselineStock.name,
+        boardName: baselineStock.boardName,
+        subBoardName: baselineStock.subBoardName,
+        price,
+        changePct: dayChange ?? baselineStock.changePct,
+        totalMarketCap: (toFiniteNumber(fields[45]) ?? 0) * 1e8 || baselineStock.totalMarketCap,
+        floatMarketCap: (toFiniteNumber(fields[44]) ?? 0) * 1e8 || baselineStock.floatMarketCap,
+        turnoverAmount: turnoverWan !== null ? turnoverWan * 10_000 : 0,
+        turnoverRate,
+      });
+    }
 
     if (/^\d{14}$/.test(timestamp)) {
       const parsedTimestamp = parseShanghaiTimestamp(
@@ -798,6 +825,7 @@ function parseTencentQuoteBatch(rawText: string) {
     updatedAt: updatedAt || new Date().toISOString(),
     quotes,
     names,
+    stocks,
   };
 }
 
@@ -1438,12 +1466,16 @@ async function fetchTencentQuoteSnapshotFromRemote(): Promise<QuoteSnapshot> {
   });
 
   const quotes: Record<string, RemoteQuoteValue> = {};
+  const stocksByCode = new Map<string, StockSnapshot>();
   let updatedAt = "";
   for (const result of results) {
     if (!result) {
       continue;
     }
     Object.assign(quotes, result.quotes);
+    for (const stock of result.stocks) {
+      stocksByCode.set(stock.code, stock);
+    }
     if (result.updatedAt > updatedAt) {
       updatedAt = result.updatedAt;
     }
@@ -1453,10 +1485,13 @@ async function fetchTencentQuoteSnapshotFromRemote(): Promise<QuoteSnapshot> {
     throw new Error("Tencent quote snapshot is incomplete");
   }
 
+  // Keep `universeComplete` unset: a partial batch failure must not drop stocks
+  // from the baseline list, so downstream merges baseline with these overrides.
   return {
     timestamp: Date.now(),
     updatedAt: updatedAt || new Date().toISOString(),
     quotes,
+    stocks: Array.from(stocksByCode.values()),
     source: "direct",
   };
 }
@@ -1575,6 +1610,7 @@ function mergeQuoteSnapshots(
     quotes[code] = {
       price: primaryQuote.price || secondaryQuote.price,
       turnoverAmount: primaryQuote.turnoverAmount || secondaryQuote.turnoverAmount,
+      turnoverRate: primaryQuote.turnoverRate ?? secondaryQuote.turnoverRate,
       changes: {
         day: primaryQuote.changes.day ?? secondaryQuote.changes.day,
         week: primaryQuote.changes.week ?? secondaryQuote.changes.week,
@@ -1944,7 +1980,7 @@ function buildNodesFromStocks(
       price: quote?.price ?? stock.price,
       changePct: getChangeForPeriod(quote?.changes, period, stock.changePct),
       turnoverAmount: quote?.turnoverAmount ?? getStockTurnoverAmount(stock),
-      turnoverRate: stock.turnoverRate ?? 0,
+      turnoverRate: quote?.turnoverRate ?? stock.turnoverRate ?? 0,
     });
 
     boardMap.set(stock.boardName, current);

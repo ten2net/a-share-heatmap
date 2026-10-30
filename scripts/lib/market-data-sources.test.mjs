@@ -12,7 +12,7 @@ const makeSnapshot = (count = 10) => ({
 });
 function tencentQuote(code, overrides = {}) {
   const fields = Array(71).fill("");
-  Object.assign(fields, { 1: "Stock", 3: "11.25", 30: "20260925153000", 32: "-2.5", 44: "12.3", 45: "23.4", ...overrides });
+  Object.assign(fields, { 1: "Stock", 3: "11.25", 30: "20260925153000", 32: "-2.5", 38: "1.63", 44: "12.3", 45: "23.4", ...overrides });
   return `v_${code.slice(-2).toLowerCase()}${code.slice(0, 6)}="${fields.join("~")}";`;
 }
 const tencentResponse = (codes) => new Response(codes.map((code) => tencentQuote(code)).join("\n"));
@@ -109,6 +109,22 @@ describe("腾讯备用源的覆盖率与字段校验", () => {
       fetchImpl: async () => new Response(tencentQuote(snapshot.stocks[0].code, { 44: "-", 45: "0" })), warn: vi.fn(),
     });
     expect(result.rows[0]).toMatchObject({ f20: 2e9, f21: 1e9 });
+  });
+
+  it("从第 38 位解析换手率并保留到快照行", async () => {
+    const parsed = parseTencentRows(tencentQuote("002602.SZ"), new Set(["002602.SZ"]));
+    expect(parsed.get("002602.SZ").f8).toBe(1.63);
+    // 缺失或非正值回退为 0，避免写入 NaN。
+    expect(parseTencentRows(tencentQuote("002602.SZ", { 38: "-" }), new Set(["002602.SZ"])).get("002602.SZ").f8).toBe(0);
+
+    const snapshot = {
+      updatedAt: "2026-09-18T07:00:00Z",
+      stocks: [{ ...makeStock(0), code: "002602.SZ", turnoverRate: 0.5 }],
+    };
+    const result = await fetchTencentRows(snapshot, {
+      fetchImpl: async () => new Response(tencentQuote("002602.SZ")), warn: vi.fn(),
+    });
+    expect(result.rows[0].f8).toBe(1.63);
   });
 
   it("短暂限流可以重试，覆盖不足则仍然报错", async () => {

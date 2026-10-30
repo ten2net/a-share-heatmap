@@ -44,7 +44,7 @@ export async function fetchEastmoneyRows({ fetchImpl = fetch, sleepImpl = sleep 
         pn: String(page), pz: String(pageSize), po: "1", np: "1",
         ut: "bd1d9ddb04089700cf9c27f6f7426281", fltt: "2", invt: "2", fid: "f12",
         fs: "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048",
-        fields: "f2,f3,f6,f12,f13,f14,f20,f21,f100,f124",
+        fields: "f2,f3,f6,f8,f12,f13,f14,f20,f21,f100,f124",
       });
       try {
         const response = await fetchImpl(`https://${eastmoneyHosts[hostIndex]}/api/qt/clist/get?${params}`, {
@@ -101,6 +101,8 @@ export function parseTencentRows(raw, expectedCodes) {
       // Tencent reports both market-cap fields in 亿元; the snapshot uses 元.
       f20: positiveNumber(fields[45], 0) * 100_000_000,
       f21: positiveNumber(fields[44], 0) * 100_000_000,
+      // Tencent field 38 is the turnover rate in percent (no unit conversion).
+      f8: positiveNumber(fields[38], 0),
       f124: timestamp,
     });
   }
